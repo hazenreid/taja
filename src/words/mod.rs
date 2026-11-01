@@ -116,4 +116,33 @@ mod tests {
         let l = WordList::english();
         assert!(l.words.len() > 1500, "단어 수: {}", l.words.len());
     }
+
+    /// 한글 단어 목록 (아직 프로그램에 연결하지 않은 데이터).
+    const KOREAN: [&str; 9] = [
+        include_str!("../../assets/words/ko/basic.txt"),
+        include_str!("../../assets/words/ko/short.txt"),
+        include_str!("../../assets/words/ko/short2.txt"),
+        include_str!("../../assets/words/ko/nouns.txt"),
+        include_str!("../../assets/words/ko/daily.txt"),
+        include_str!("../../assets/words/ko/themes.txt"),
+        include_str!("../../assets/words/ko/verbs.txt"),
+        include_str!("../../assets/words/ko/verbs2.txt"),
+        include_str!("../../assets/words/ko/adjectives.txt"),
+    ];
+
+    #[test]
+    fn korean_words_are_hangul_syllables() {
+        let mut unique = std::collections::HashSet::new();
+        for text in KOREAN {
+            let tokens = text
+                .lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .flat_map(str::split_whitespace);
+            for w in tokens {
+                assert!(w.chars().all(|c| ('가'..='힣').contains(&c)), "완성된 한글이 아님: {w}");
+                unique.insert(w);
+            }
+        }
+        assert!(unique.len() >= 2000, "한글 단어 수: {}", unique.len());
+    }
 }
