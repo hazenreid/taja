@@ -100,14 +100,36 @@ impl Bigram {
         }
         let i = rng.random_range(0..chars.len());
         chars[i] = f;
-        chars.into_iter().collect()
+        let w: String = chars.into_iter().collect();
+        if is_blocked(&w) {
+            f.to_string().repeat(min.max(1))
+        } else {
+            w
+        }
     }
 }
 
 const VOWELS: [char; 6] = ['a', 'e', 'i', 'o', 'u', 'y'];
 
-/// 너무 짧거나, 모음이 없거나, 첫 글자가 겹치거나(jja), 자음이 4개 이상 이어지면 버립니다.
+/// 가짜 단어로 우연히 만들어지면 안 되는 단어 (정확히 같으면 버림).
+const BLOCKED_WORDS: [&str; 12] = [
+    "ass", "tit", "tits", "fag", "sex", "cum", "hell", "damn", "kill", "nazi", "anal", "anus",
+];
+/// 이 글자들이 들어 있으면 버림.
+const BLOCKED_PARTS: [&str; 10] = [
+    "fuck", "shit", "cunt", "nigg", "slut", "cock", "dick", "piss", "rape", "porn",
+];
+
+fn is_blocked(w: &str) -> bool {
+    BLOCKED_WORDS.contains(&w) || BLOCKED_PARTS.iter().any(|p| w.contains(p))
+}
+
+/// 너무 짧거나, 모음이 없거나, 첫 글자가 겹치거나(jja), 자음이 4개 이상 이어지거나,
+/// 부적절한 단어면 버립니다.
 fn looks_ok(w: &str, min: usize, need_vowel: bool) -> bool {
+    if is_blocked(w) {
+        return false;
+    }
     let chars: Vec<char> = w.chars().collect();
     if chars.len() < min {
         return false;
@@ -152,6 +174,17 @@ mod tests {
             assert!((1..=6).contains(&w.len()), "{w}");
             assert!(w.contains('e'), "{w}");
             assert!(w.chars().all(|c| allowed.contains(&c)), "{w}");
+        }
+    }
+
+    #[test]
+    fn never_generates_blocked_words() {
+        let list = WordList::english();
+        let mut rng = StdRng::seed_from_u64(3);
+        let allowed: Vec<char> = "fjdksla".chars().collect();
+        for _ in 0..5000 {
+            let w = list.bigram.generate_with(&mut rng, &allowed, Some('s'), 3, 6);
+            assert!(!super::is_blocked(&w), "{w}");
         }
     }
 

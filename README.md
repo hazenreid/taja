@@ -52,7 +52,7 @@ kvgd..hcuw
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과: 시작 키 `r o e t n` (5개) → `s a d i l f h c w p m u g b k y v j x z q`
+이 배열의 계산 결과: 시작 키 `r o e t` (4개) → `s n i a d c l g p m u h f b y v w k x q j z`
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -64,7 +64,7 @@ cargo run --release -- --layout layouts/mine.txt
   - QWERTY: `f j d k s l`에는 모음이 없어서 `a`까지 7개 (`fjdksla`)
   - 홈열이 `arstdhneio`인 레이아웃: `t n s e` 4개로 충분
 - **언락 순서**: "이 키를 열면 새로 칠 수 있게 되는 단어의 양 ÷ 그 자리의 치기 어려운 정도"가 가장 큰 키부터
-  - QWERTY 결과: `fjdksla` → `e i t r o h w n c m u g p y b v z x q`
+  - QWERTY 결과: `fjdksla` → `e i r t c o n g u m p h v y w b x q z`
 
 진도는 레이아웃마다 따로 저장됩니다 (Linux: `~/.local/share/taja/profiles/<이름>.json`).
 레이아웃 파일 내용이 바뀌면 진도를 새로 시작합니다.
@@ -78,10 +78,11 @@ cargo run --release -- --layout layouts/mine.txt
 
 ## 연습 문장
 
-- 내장 영어 단어 목록(`assets/words/`, 약 2200개)에서 열린 키로만 된 단어를 고름
-  - `common.txt`: 아주 흔한 기본 단어 (3배 자주 나옴)
-  - `early.txt`: 초반 단계(홈열 + e i t r o h)용 단어
-  - `verbs.txt`, `nouns.txt`, `adjectives.txt`, `extra.txt`: 품사/주제별 단어
+- 내장 영어 단어 목록(`assets/words/`, 약 1만 1천 개)에서 열린 키로만 된 단어를 고름
+  - `common.txt`: 아주 흔한 기본 단어 (가중치 3)
+  - `scowl/level10.txt`: SCOWL 10단계, 가장 흔한 단어 약 4천 개 (가중치 2)
+  - `early.txt`, `verbs.txt`, `nouns.txt`, `adjectives.txt`, `extra.txt`: 직접 고른 단계별·품사별 단어 (가중치 1)
+  - `scowl/level20.txt`: SCOWL 20단계, 흔한 단어 약 7천 개 (가중치 0.7)
   - 공백이나 줄바꿈으로 구분하고 `#` 줄은 주석. 파일에 단어를 추가하면 다음 빌드부터 반영됨
 - 진짜 단어가 적은 초반에는 영어 글자 연결 빈도로 만든 가짜 단어를 섞음 (예: `flads`, `kalds`)
 - 단어의 절반 정도에 집중 키가 들어감
@@ -109,6 +110,12 @@ src/
 ```sh
 cargo test
 ```
+
+## 단어 목록 출처
+
+영어 단어 일부는 [SCOWL](http://wordlist.aspell.net/) (Spell Checker Oriented Word Lists, Kevin Atkinson)
+2020.12.07 판의 10·20단계에서 가져왔습니다. 저작권 표시와 사용 조건은 `assets/words/scowl/COPYRIGHT.txt`에 있습니다.
+`scripts/import_scowl.py`로 다시 만들 수 있고, 이때 영어 소문자 단어만 남기고 부적절한 단어는 뺍니다.
 
 ## 한글 단어 목록 (준비 중)
 

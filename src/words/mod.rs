@@ -16,9 +16,15 @@ const OTHERS: [&str; 5] = [
     include_str!("../../assets/words/adjectives.txt"),
 ];
 
-/// 자주 쓰는 단어와 일반 단어의 가중치.
+/// SCOWL 공개 단어 목록 (scripts/import_scowl.py 로 생성). 10단계가 더 흔한 단어.
+const SCOWL_10: &str = include_str!("../../assets/words/scowl/level10.txt");
+const SCOWL_20: &str = include_str!("../../assets/words/scowl/level20.txt");
+
+/// 단어 묶음별 가중치 (클수록 자주 나옴). 같은 단어는 먼저 나온 묶음의 가중치를 씁니다.
 const COMMON_WEIGHT: f64 = 3.0;
+const SCOWL_10_WEIGHT: f64 = 2.0;
 const OTHER_WEIGHT: f64 = 1.0;
+const SCOWL_20_WEIGHT: f64 = 0.7;
 
 #[derive(Debug, Clone)]
 pub struct Word {
@@ -44,8 +50,9 @@ pub fn mask_of(chars: impl IntoIterator<Item = char>) -> u32 {
 
 impl WordList {
     pub fn english() -> Self {
-        let mut sources = vec![(COMMON, COMMON_WEIGHT)];
+        let mut sources = vec![(COMMON, COMMON_WEIGHT), (SCOWL_10, SCOWL_10_WEIGHT)];
         sources.extend(OTHERS.iter().map(|&t| (t, OTHER_WEIGHT)));
+        sources.push((SCOWL_20, SCOWL_20_WEIGHT));
         Self::from_sources(&sources)
     }
 
@@ -114,7 +121,7 @@ mod tests {
     #[test]
     fn builtin_list_is_reasonable() {
         let l = WordList::english();
-        assert!(l.words.len() > 1500, "단어 수: {}", l.words.len());
+        assert!(l.words.len() > 10_000, "단어 수: {}", l.words.len());
     }
 
     /// 한글 단어 목록 (아직 프로그램에 연결하지 않은 데이터).
@@ -139,7 +146,10 @@ mod tests {
                 .filter(|l| !l.trim_start().starts_with('#'))
                 .flat_map(str::split_whitespace);
             for w in tokens {
-                assert!(w.chars().all(|c| ('가'..='힣').contains(&c)), "완성된 한글이 아님: {w}");
+                assert!(
+                    w.chars().all(|c| ('가'..='힣').contains(&c)),
+                    "완성된 한글이 아님: {w}"
+                );
                 unique.insert(w);
             }
         }
