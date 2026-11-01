@@ -1,7 +1,7 @@
 //! 10×3 키보드 레이아웃.
 //!
 //! 레이아웃 파일은 텍스트 3줄이고, 줄마다 글자 10개입니다 (공백은 무시).
-//! `.`은 빈 칸(키 없음)입니다.
+//! 영어 글자(a~z)가 아닌 칸은 모두 빈 칸(키 없음)으로 처리합니다.
 //! 손가락, 시작 키, 언락 순서는 모두 위치로부터 자동 계산합니다.
 
 pub mod cost;
@@ -16,8 +16,8 @@ pub const HOME_ROW: usize = 1;
 
 const QWERTY: &str = include_str!("../../assets/layouts/qwerty.txt");
 
-/// 레이아웃 파일에서 빈 칸을 나타내는 글자.
-pub const EMPTY_MARK: char = '.';
+/// 빈 칸을 문자열로 보여줄 때 쓰는 글자.
+const EMPTY_MARK: char = '.';
 /// 내부에서 빈 칸을 나타내는 값 (파일에서 공백은 무시되므로 실제 키와 겹치지 않음).
 const BLANK: char = ' ';
 
@@ -91,11 +91,8 @@ impl Layout {
                 });
             }
             for (c, &ch) in row.iter().enumerate() {
-                keys[r][c] = if ch == EMPTY_MARK {
-                    BLANK
-                } else {
-                    ch.to_ascii_lowercase()
-                };
+                let ch = ch.to_ascii_lowercase();
+                keys[r][c] = if is_letter(ch) { ch } else { BLANK };
             }
         }
 
@@ -193,7 +190,8 @@ mod tests {
     fn parses_qwerty() {
         let l = Layout::qwerty();
         assert_eq!(l.keys[1][0], 'a');
-        assert_eq!(l.keys[1][9], ';');
+        assert_eq!(l.key_at(1, 9), None);
+        assert_eq!(l.iter().count(), 26);
         assert_eq!(l.position('e'), Some((0, 2)));
         assert!(l.missing_letters().is_empty());
     }
@@ -205,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn dots_are_empty_slots() {
+    fn non_letters_are_empty_slots() {
         let l = Layout::parse("mine", "pmal.zbfjy\ninerqxot.s\nkvgd..hcuw").unwrap();
         assert_eq!(l.iter().count(), 26);
         assert_eq!(l.key_at(0, 4), None);

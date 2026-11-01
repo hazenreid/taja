@@ -10,8 +10,6 @@ use crate::layout::is_letter;
 const ENOUGH_REAL_WORDS: f64 = 60.0;
 /// 단어 중 집중 키가 들어간 단어의 비율 목표.
 const FOCUS_RATE: f64 = 0.5;
-/// 구두점 키가 열렸을 때 단어 뒤에 붙이는 확률.
-const PUNCT_RATE: f64 = 0.2;
 
 pub fn build_line(
     rng: &mut impl Rng,
@@ -21,9 +19,7 @@ pub fn build_line(
     max_chars: usize,
 ) -> String {
     let letters: Vec<char> = unlocked.iter().copied().filter(|&c| is_letter(c)).collect();
-    let punct: Vec<char> = unlocked.iter().copied().filter(|&c| !is_letter(c)).collect();
     let letter_focus = focus.filter(|&c| is_letter(c));
-    let punct_focus = focus.filter(|c| punct.contains(c));
 
     let real = list.available(mask_of(letters.iter().copied()));
     let real_ratio = if real.is_empty() {
@@ -44,7 +40,7 @@ pub fn build_line(
     let mut len = 0;
     for _ in 0..200 {
         let want_focus = rng.random_bool(FOCUS_RATE);
-        let mut word = if rng.random_bool(real_ratio) {
+        let word = if rng.random_bool(real_ratio) {
             pick_real(rng, want_focus)
         } else {
             None
@@ -57,17 +53,6 @@ pub fn build_line(
         if words.last() == Some(&word) {
             continue;
         }
-        if !punct.is_empty() {
-            let rate = if punct_focus.is_some() { 0.5 } else { PUNCT_RATE };
-            if rng.random_bool(rate) {
-                let p = match punct_focus {
-                    Some(p) if rng.random_bool(0.6) => p,
-                    _ => punct[rng.random_range(0..punct.len())],
-                };
-                word.push(p);
-            }
-        }
-
         let extra = if words.is_empty() { 0 } else { 1 };
         if !words.is_empty() && len + extra + word.len() > max_chars {
             break;
@@ -92,7 +77,7 @@ mod tests {
     fn only_unlocked_keys_and_fits_width() {
         let list = WordList::english();
         let mut rng = StdRng::seed_from_u64(7);
-        for unlocked in ["asdfjkl", "asdfjkle", "asdfjkleir", "asdfjkl;e"] {
+        for unlocked in ["asdfjkl", "asdfjkle", "asdfjkleir", "fjdkslaeitro"] {
             let keys = chars(unlocked);
             for _ in 0..200 {
                 let line = build_line(&mut rng, &list, &keys, keys.last().copied(), 50);

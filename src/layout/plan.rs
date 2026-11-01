@@ -1,7 +1,7 @@
 //! 시작 키와 언락 순서를 레이아웃 위치와 단어 목록으로 자동 계산합니다.
 
 use super::cost::cost;
-use super::{COLS, HOME_ROW, Layout, is_letter};
+use super::{HOME_ROW, Layout, is_letter};
 use crate::words::{WordList, letter_bit};
 
 const VOWELS: [char; 5] = ['a', 'e', 'i', 'o', 'u'];
@@ -100,16 +100,7 @@ pub fn make_plan(layout: &Layout, words: &WordList) -> Plan {
         order.push(ch);
     }
 
-    // 3. 글자가 아닌 키(; , . / 등)는 맨 뒤에, 쉬운 자리부터.
-    let mut others: Vec<(usize, usize, char)> = layout
-        .iter()
-        .filter(|p| !is_letter(p.2) && !order.contains(&p.2))
-        .collect();
-    others.sort_by(|a, b| cost(a.0, a.1).total_cmp(&cost(b.0, b.1)).then(a.1.cmp(&b.1)));
-    order.extend(others.into_iter().map(|p| p.2));
-
     debug_assert_eq!(order.len(), layout.iter().count());
-    debug_assert!(order.len() <= 3 * COLS);
     Plan { order, start_len }
 }
 
@@ -129,15 +120,13 @@ mod tests {
         // f j d k s l 에는 모음이 없어서 a가 들어가는 7개에서 멈춥니다.
         assert_eq!(start, "fjdksla");
         assert_eq!(plan.order[plan.start_len], 'e', "{:?}", plan.order);
-        // '.'은 빈 칸이라 키는 29개, 구두점 ; , / 는 맨 뒤.
-        assert_eq!(plan.order.len(), 29);
-        let tail: String = plan.order[26..].iter().collect();
-        assert!(tail.chars().all(|c| ";,/".contains(c)), "{tail}");
+        // ; , . / 는 빈 칸이라 키는 26개.
+        assert_eq!(plan.order.len(), 26);
         // 모든 키가 한 번씩.
         let mut sorted = plan.order.clone();
         sorted.sort();
         sorted.dedup();
-        assert_eq!(sorted.len(), 29);
+        assert_eq!(sorted.len(), 26);
     }
 
     #[test]
@@ -157,15 +146,6 @@ mod tests {
     fn uses_fewest_keys_that_give_enough_words() {
         // 검지·중지 자리에 t n s e 가 있으면 4개로 충분 (set, ten, nest, seen ...).
         assert_eq!(start_of("qwfpgjluy;\narstdhneio\nzxcvbkm,./"), "tnse");
-    }
-
-    #[test]
-    fn punctuation_in_start_is_not_repeated() {
-        // 홈열 8칸을 다 써도 단어가 부족한 경우 ; 가 시작 키에 포함됩니다.
-        let l = Layout::parse("t", "qwertyuiop\nzsdfghjkl;\naxcvbnm,./").unwrap();
-        let plan = make_plan(&l, &WordList::english());
-        assert_eq!(plan.order.iter().filter(|&&c| c == ';').count(), 1);
-        assert_eq!(plan.order.len(), 29);
     }
 
     #[test]
