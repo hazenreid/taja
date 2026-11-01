@@ -1,0 +1,47 @@
+# 일반 단어 (가중치 낮음). 초반 키(홈열 + 모음)로 칠 수 있는 단어를 넉넉히 넣음.
+
+# 홈열 위주
+alas lass lads dads fads asks falls flask flasks salad salads sass
+fake flake flakes lakes leaf leafs seal seals deal deals sled sleds fled jade
+kale desks fee fees feed feeds seed seeds sea seas lease leased ease eased
+safe safes self sells fall false sale sales sake saddle ladder sealed
+
+# 홈열 + i
+aid aids said slid slide slides side sides kid kids skid skids lid lids
+dial dials sail sails jail jails fail fails ideal idle field fields life
+file files filed silk disk disks dish fish skill skills kiss kissed
+
+# + r, u, t
+rid ride rides raid read reads dear fear fears rule ruled sure true rust
+dust just trust adjust suit suits dirt fire tired tide tides tied tile
+tiles test tests tree trees street streets rest rests tea teas eat eats
+tale tales late later rate rates taste fur fruit rude dart darts star stars
+art arts start starts stairs tear tears dare darer red rider writer
+user users use used fuse fuses sure surf turf truck stuck duck ducks luck
+
+# + o, n
+lion lions note notes nose noise tone tones stone stones store stored
+roots root door doors floor floors loan loans load loads soon noon
+son sons son tin tins nine nines one ones done tone toner snore snort
+food foods fool fools tool tools stool rod rods nod nods dot dots lot lots
+ant ants tan nut nuts nest nests sent tent tents rent rents dent dents
+inn into unto onto told sold fold folds gold hold holds old older
+
+# + h, g
+hat hats heat heats hit hits hint hints hand hands hard head heads heal
+hide hides hike hikes hole holes horn horns hug hugs huge
+egg eggs dog dogs log logs flag flags frog frogs gate gates goat goats
+glass glad grass grade grades grand grind ring rings sing sings song songs
+thing things think night nights light lights sight fight right high
+long longer strong string strings hang hangs gift gifts age ages
+
+# 주제별: 집, 자연, 음식, 몸, 동작
+garden kitchen sofa chair lamp shelf bath towel soap brush spoon fork knife
+plate bowl cup glass bottle oven stove table carpet window roof stairs
+river ocean forest desert island valley mountain hill field cloud storm
+rainy sunny windy frost fog leaves branch flower flowers petal grass seed
+bread butter cheese apple lemon grape onion tomato rice soup salad sugar
+honey juice coffee dinner lunch supper snack cake pie tart jam nuts
+hand arm leg foot toe nose ear eye lip tooth teeth neck back knee hair
+walk jump run swim climb throw catch kick lift drop hold shake slide
+smile laugh cry shout whisper listen think dream sleep wake rest
