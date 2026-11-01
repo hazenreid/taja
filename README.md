@@ -28,7 +28,8 @@ cargo run --release -- --help           # 옵션 보기
 
 ## 레이아웃 파일
 
-10×3 글자만 적으면 됩니다. 공백은 무시합니다.
+10×3 글자만 적으면 됩니다. 공백은 무시하고, `.`은 **빈 칸**(키 없음)입니다.
+그래서 마침표 키는 레이아웃에 넣을 수 없습니다 (내장 QWERTY의 `.` 자리도 빈 칸).
 
 ```
 qwertyuiop
@@ -38,6 +39,20 @@ zxcvbnm,./
 
 `taja --paths`로 나오는 레이아웃 폴더(Linux: `~/.config/taja/layouts/`)에 `mine.txt`로 저장하고
 `--layout mine`으로 실행합니다. 파일 경로를 바로 줘도 됩니다 (`--layout ./mine.txt`).
+
+저장소에 있는 예시: `layouts/mine.txt`
+
+```
+pmal.zbfjy
+inerqxot.s
+kvgd..hcuw
+```
+
+```sh
+cargo run --release -- --layout layouts/mine.txt
+```
+
+이 배열의 계산 결과: 시작 키 `r o e t n` (5개) → `s a d i l f h c w p m u g b k y v j x z q`
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -50,7 +65,7 @@ zxcvbnm,./
   - 홈열이 `arstdhneio`인 레이아웃: `t n s e` 4개로 충분
 - **언락 순서**: "이 키를 열면 새로 칠 수 있게 되는 단어의 양 ÷ 그 자리의 치기 어려운 정도"가 가장 큰 키부터.
   `; , . /` 같은 글자가 아닌 키는 맨 뒤에 열림
-  - QWERTY 결과: `fjdksla` → `e i t r o h w n c m u g p y b v z x q` → `; , . /`
+  - QWERTY 결과: `fjdksla` → `e i t r o h w n c m u g p y b v z x q` → `; , /`
 
 진도는 레이아웃마다 따로 저장됩니다 (Linux: `~/.local/share/taja/profiles/<이름>.json`).
 레이아웃 파일 내용이 바뀌면 진도를 새로 시작합니다.

@@ -25,14 +25,19 @@ pub struct Plan {
 /// 홈열 키를 검지부터 하나씩 늘려 가며, 진짜 단어가 충분히 나오는 가장 적은 개수(4~8)를 고릅니다.
 /// 8개로도 부족하면 8개를 쓰고, 모음이 하나도 없으면 가장 쉬운 자리의 모음을 하나 더합니다.
 pub fn start_keys(layout: &Layout, words: &WordList) -> Vec<char> {
-    let home: Vec<char> = START_COLS.iter().map(|&c| layout.keys[HOME_ROW][c]).collect();
+    let home: Vec<char> = START_COLS
+        .iter()
+        .filter_map(|&c| layout.key_at(HOME_ROW, c))
+        .collect();
     let word_count = |keys: &[char]| {
         let mask = keys.iter().filter_map(|&c| letter_bit(c)).fold(0, |m, b| m | b);
         words.available(mask).len()
     };
-    let n = (MIN_START..=MAX_START)
+    // 홈열에 빈 칸이 있으면 쓸 수 있는 키가 8개보다 적을 수 있습니다.
+    let max = MAX_START.min(home.len());
+    let n = (MIN_START.min(max)..=max)
         .find(|&n| word_count(&home[..n]) >= MIN_START_WORDS)
-        .unwrap_or(MAX_START);
+        .unwrap_or(max);
     let mut start = home[..n].to_vec();
 
     if word_count(&start) < MIN_START_WORDS && !start.iter().any(|c| VOWELS.contains(c)) {
@@ -124,15 +129,28 @@ mod tests {
         // f j d k s l 에는 모음이 없어서 a가 들어가는 7개에서 멈춥니다.
         assert_eq!(start, "fjdksla");
         assert_eq!(plan.order[plan.start_len], 'e', "{:?}", plan.order);
-        assert_eq!(plan.order.len(), 30);
-        // 구두점은 맨 뒤 4개.
+        // '.'은 빈 칸이라 키는 29개, 구두점 ; , / 는 맨 뒤.
+        assert_eq!(plan.order.len(), 29);
         let tail: String = plan.order[26..].iter().collect();
-        assert!(tail.chars().all(|c| ";,./".contains(c)), "{tail}");
+        assert!(tail.chars().all(|c| ";,/".contains(c)), "{tail}");
         // 모든 키가 한 번씩.
         let mut sorted = plan.order.clone();
         sorted.sort();
         sorted.dedup();
-        assert_eq!(sorted.len(), 30);
+        assert_eq!(sorted.len(), 29);
+    }
+
+    #[test]
+    fn layout_with_empty_slots() {
+        let l = Layout::parse("mine", "pmal.zbfjy\ninerqxot.s\nkvgd..hcuw").unwrap();
+        let plan = make_plan(&l, &WordList::english());
+        assert_eq!(plan.order.len(), 26);
+        let start = &plan.order[..plan.start_len];
+        assert!((MIN_START..=MAX_START).contains(&start.len()), "{start:?}");
+        assert!(
+            start.iter().all(|&c| l.position(c).unwrap().0 == HOME_ROW),
+            "{start:?}"
+        );
     }
 
     #[test]
@@ -147,7 +165,7 @@ mod tests {
         let l = Layout::parse("t", "qwertyuiop\nzsdfghjkl;\naxcvbnm,./").unwrap();
         let plan = make_plan(&l, &WordList::english());
         assert_eq!(plan.order.iter().filter(|&&c| c == ';').count(), 1);
-        assert_eq!(plan.order.len(), 30);
+        assert_eq!(plan.order.len(), 29);
     }
 
     #[test]

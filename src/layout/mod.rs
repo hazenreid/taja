@@ -1,6 +1,7 @@
 //! 10×3 키보드 레이아웃.
 //!
 //! 레이아웃 파일은 텍스트 3줄이고, 줄마다 글자 10개입니다 (공백은 무시).
+//! `.`은 빈 칸(키 없음)입니다.
 //! 손가락, 시작 키, 언락 순서는 모두 위치로부터 자동 계산합니다.
 
 pub mod cost;
@@ -14,6 +15,11 @@ pub const COLS: usize = 10;
 pub const HOME_ROW: usize = 1;
 
 const QWERTY: &str = include_str!("../../assets/layouts/qwerty.txt");
+
+/// 레이아웃 파일에서 빈 칸을 나타내는 글자.
+pub const EMPTY_MARK: char = '.';
+/// 내부에서 빈 칸을 나타내는 값 (파일에서 공백은 무시되므로 실제 키와 겹치지 않음).
+const BLANK: char = ' ';
 
 /// 레이아웃에 최소한 있어야 하는 영어 글자 수.
 const MIN_LETTERS: usize = 5;
@@ -85,7 +91,11 @@ impl Layout {
                 });
             }
             for (c, &ch) in row.iter().enumerate() {
-                keys[r][c] = ch.to_ascii_lowercase();
+                keys[r][c] = if ch == EMPTY_MARK {
+                    BLANK
+                } else {
+                    ch.to_ascii_lowercase()
+                };
             }
         }
 
@@ -135,12 +145,18 @@ impl Layout {
         Self::parse(name, &text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// (줄, 칸, 글자)를 모두 돌려줍니다.
+    /// 빈 칸을 뺀 (줄, 칸, 글자)를 모두 돌려줍니다.
     pub fn iter(&self) -> impl Iterator<Item = (usize, usize, char)> + '_ {
         self.keys
             .iter()
             .enumerate()
             .flat_map(|(r, row)| row.iter().enumerate().map(move |(c, &ch)| (r, c, ch)))
+            .filter(|p| p.2 != BLANK)
+    }
+
+    /// 그 자리의 키. 빈 칸이면 None.
+    pub fn key_at(&self, row: usize, col: usize) -> Option<char> {
+        Some(self.keys[row][col]).filter(|&c| c != BLANK)
     }
 
     pub fn position(&self, ch: char) -> Option<(usize, usize)> {
@@ -154,7 +170,14 @@ impl Layout {
 
     /// 프로필이 같은 레이아웃용인지 확인할 때 쓰는 3줄 문자열.
     pub fn rows_as_strings(&self) -> Vec<String> {
-        self.keys.iter().map(|r| r.iter().collect()).collect()
+        self.keys
+            .iter()
+            .map(|r| {
+                r.iter()
+                    .map(|&c| if c == BLANK { EMPTY_MARK } else { c })
+                    .collect()
+            })
+            .collect()
     }
 }
 
@@ -179,6 +202,17 @@ mod tests {
     fn ignores_spaces_and_uppercase() {
         let l = Layout::parse("t", "Q W E R T Y U I O P\nasdfghjkl;\n\nzxcvbnm,./\n").unwrap();
         assert_eq!(l.keys[0][0], 'q');
+    }
+
+    #[test]
+    fn dots_are_empty_slots() {
+        let l = Layout::parse("mine", "pmal.zbfjy\ninerqxot.s\nkvgd..hcuw").unwrap();
+        assert_eq!(l.iter().count(), 26);
+        assert_eq!(l.key_at(0, 4), None);
+        assert_eq!(l.key_at(0, 3), Some('l'));
+        assert_eq!(l.position('.'), None);
+        assert!(l.missing_letters().is_empty());
+        assert_eq!(l.rows_as_strings()[2], "kvgd..hcuw");
     }
 
     #[test]

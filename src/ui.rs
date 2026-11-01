@@ -138,11 +138,14 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     for (r, row) in app.layout.keys.iter().enumerate() {
         let mut spans = vec![Span::raw(" ".repeat(ROW_INDENT[r]))];
-        for (c, &ch) in row.iter().enumerate() {
+        for c in 0..row.len() {
             if c == COLS / 2 {
                 spans.push(Span::raw("  "));
             }
-            spans.push(Span::styled(format!(" {ch} "), key_style(app, ch, next, focus)));
+            match app.layout.key_at(r, c) {
+                Some(ch) => spans.push(Span::styled(format!(" {ch} "), key_style(app, ch, next, focus))),
+                None => spans.push(Span::styled(" · ", Style::new().fg(Color::DarkGray))),
+            }
             spans.push(Span::raw(" "));
         }
         // 가운데 정렬해도 줄마다 엇갈린 모양이 유지되도록 오른쪽도 채웁니다.
