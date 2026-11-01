@@ -50,7 +50,7 @@ zxcvbnm,./
   - 홈열이 `arstdhneio`인 레이아웃: `t n s e` 4개로 충분
 - **언락 순서**: "이 키를 열면 새로 칠 수 있게 되는 단어의 양 ÷ 그 자리의 치기 어려운 정도"가 가장 큰 키부터.
   `; , . /` 같은 글자가 아닌 키는 맨 뒤에 열림
-  - QWERTY 결과: `fjdksla` → `e i t r o h n w g m u c p y v b q z x` → `; , . /`
+  - QWERTY 결과: `fjdksla` → `e i t r o h w n c m u g p y b v z x q` → `; , . /`
 
 진도는 레이아웃마다 따로 저장됩니다 (Linux: `~/.local/share/taja/profiles/<이름>.json`).
 레이아웃 파일 내용이 바뀌면 진도를 새로 시작합니다.
@@ -64,7 +64,11 @@ zxcvbnm,./
 
 ## 연습 문장
 
-- 내장 영어 단어 목록(`assets/words/`)에서 열린 키로만 된 단어를 고름
+- 내장 영어 단어 목록(`assets/words/`, 약 2200개)에서 열린 키로만 된 단어를 고름
+  - `common.txt`: 아주 흔한 기본 단어 (3배 자주 나옴)
+  - `early.txt`: 초반 단계(홈열 + e i t r o h)용 단어
+  - `verbs.txt`, `nouns.txt`, `adjectives.txt`, `extra.txt`: 품사/주제별 단어
+  - 공백이나 줄바꿈으로 구분하고 `#` 줄은 주석. 파일에 단어를 추가하면 다음 빌드부터 반영됨
 - 진짜 단어가 적은 초반에는 영어 글자 연결 빈도로 만든 가짜 단어를 섞음 (예: `flads`, `kalds`)
 - 단어의 절반 정도에 집중 키가 들어감
 

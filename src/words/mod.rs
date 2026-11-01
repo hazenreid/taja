@@ -5,12 +5,20 @@ pub mod line;
 
 use generator::Bigram;
 
+/// 자주 쓰는 기본 단어 (가중치 높음).
 const COMMON: &str = include_str!("../../assets/words/common.txt");
-const EXTRA: &str = include_str!("../../assets/words/extra.txt");
+/// 일반 단어 파일들.
+const OTHERS: [&str; 5] = [
+    include_str!("../../assets/words/early.txt"),
+    include_str!("../../assets/words/extra.txt"),
+    include_str!("../../assets/words/verbs.txt"),
+    include_str!("../../assets/words/nouns.txt"),
+    include_str!("../../assets/words/adjectives.txt"),
+];
 
 /// 자주 쓰는 단어와 일반 단어의 가중치.
 const COMMON_WEIGHT: f64 = 3.0;
-const EXTRA_WEIGHT: f64 = 1.0;
+const OTHER_WEIGHT: f64 = 1.0;
 
 #[derive(Debug, Clone)]
 pub struct Word {
@@ -36,7 +44,9 @@ pub fn mask_of(chars: impl IntoIterator<Item = char>) -> u32 {
 
 impl WordList {
     pub fn english() -> Self {
-        Self::from_sources(&[(COMMON, COMMON_WEIGHT), (EXTRA, EXTRA_WEIGHT)])
+        let mut sources = vec![(COMMON, COMMON_WEIGHT)];
+        sources.extend(OTHERS.iter().map(|&t| (t, OTHER_WEIGHT)));
+        Self::from_sources(&sources)
     }
 
     /// 각 원본 텍스트를 공백으로 나눠 읽습니다. 중복은 처음 나온 것만 남깁니다.
@@ -104,6 +114,6 @@ mod tests {
     #[test]
     fn builtin_list_is_reasonable() {
         let l = WordList::english();
-        assert!(l.words.len() > 600, "단어 수: {}", l.words.len());
+        assert!(l.words.len() > 1500, "단어 수: {}", l.words.len());
     }
 }
