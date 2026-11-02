@@ -45,7 +45,7 @@ struct Args {
     lang: LangArg,
 
     /// Per-key target speed to unlock the next key (WPM; Korean shows it x5 as keystrokes per minute)
-    #[arg(long, default_value_t = 25.0)]
+    #[arg(long, default_value_t = 30.0)]
     target_wpm: f64,
 
     /// Per-key target accuracy to unlock the next key (%)
