@@ -49,21 +49,21 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseError::RowCount(n) => {
-                write!(f, "줄이 {ROWS}개여야 하는데 {n}개입니다")
+                write!(f, "expected {ROWS} rows, found {n}")
             }
             ParseError::RowLength { row, len } => {
-                write!(f, "{}째 줄: 글자가 {COLS}개여야 하는데 {len}개입니다", row + 1)
+                write!(f, "row {}: expected {COLS} keys, found {len}", row + 1)
             }
             ParseError::Duplicate { ch, first, second } => write!(
                 f,
-                "'{ch}'가 두 번 나옵니다 ({}째 줄 {}번째, {}째 줄 {}번째)",
+                "'{ch}' appears twice (row {} col {}, row {} col {})",
                 first.0 + 1,
                 first.1 + 1,
                 second.0 + 1,
                 second.1 + 1
             ),
             ParseError::TooFewLetters(n) => {
-                write!(f, "영어 글자가 {n}개뿐입니다 (최소 {MIN_LETTERS}개)")
+                write!(f, "only {n} letters (need at least {MIN_LETTERS})")
             }
         }
     }
@@ -119,7 +119,7 @@ impl Layout {
     }
 
     pub fn qwerty() -> Self {
-        Self::parse("qwerty", QWERTY).expect("내장 QWERTY 레이아웃이 잘못됨")
+        Self::parse("qwerty", QWERTY).expect("built-in QWERTY layout is invalid")
     }
 
     /// `arg`가 "qwerty"면 내장 레이아웃, 존재하는 파일 경로면 그 파일,
@@ -137,7 +137,7 @@ impl Layout {
             direct.to_path_buf()
         };
         let text = std::fs::read_to_string(&path)
-            .map_err(|e| format!("레이아웃 파일을 읽을 수 없습니다 ({}): {e}", path.display()))?;
+            .map_err(|e| format!("cannot read layout file ({}): {e}", path.display()))?;
         let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or(arg);
         Self::parse(name, &text).map_err(|e| format!("{}: {e}", path.display()))
     }

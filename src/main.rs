@@ -25,37 +25,38 @@ use words::{Lang, WordList};
 
 #[derive(Clone, Copy, ValueEnum)]
 enum LangArg {
-    /// 영어
+    /// English
     En,
-    /// 한글 (두벌식, 영어 레이아웃의 글자를 따라감: q=ㅂ, w=ㅈ …)
+    /// Korean (dubeolsik; follows the layout's letters: q=ㅂ, w=ㅈ, ...)
     Ko,
 }
 
-/// 터미널 자판 학습기: 홈열 몇 개 키로 시작해서 목표 속도에 닿으면 다음 키를 엽니다.
+/// Terminal keyboard trainer: start with a few home-row keys and unlock the next key
+/// once every open key reaches the target speed and accuracy.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
-    /// 레이아웃 이름(설정 폴더의 <이름>.txt) 또는 파일 경로
+    /// Layout name (<name>.txt in the layouts folder) or a file path
     #[arg(short, long, default_value = "qwerty")]
     layout: String,
 
-    /// 연습할 언어
+    /// Language to practice
     #[arg(long, value_enum, default_value = "en")]
     lang: LangArg,
 
-    /// 다음 키를 열기 위한 키별 목표 속도 (WPM, 한글은 ×5 해서 타수로 표시)
+    /// Per-key target speed to unlock the next key (WPM; Korean shows it x5 as keystrokes per minute)
     #[arg(long, default_value_t = 25.0)]
     target_wpm: f64,
 
-    /// 다음 키를 열기 위한 키별 목표 정확도 (%)
+    /// Per-key target accuracy to unlock the next key (%)
     #[arg(long, default_value_t = 95.0)]
     target_acc: f64,
 
-    /// 이 레이아웃의 진도를 지우고 처음부터 시작
+    /// Erase progress for this layout and language and start over
     #[arg(long)]
     reset: bool,
 
-    /// 레이아웃/진도 파일 위치를 보여주고 끝냄
+    /// Print the layouts and progress folders and exit
     #[arg(long)]
     paths: bool,
 }
@@ -64,7 +65,7 @@ fn main() -> ExitCode {
     match run_app(Args::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("오류: {e}");
+            eprintln!("error: {e}");
             ExitCode::FAILURE
         }
     }
@@ -74,17 +75,17 @@ fn run_app(args: Args) -> Result<(), String> {
     let paths = Paths::detect();
     if args.paths {
         match &paths.layouts {
-            Some(dir) => println!("레이아웃 폴더: {}", dir.display()),
-            None => println!("레이아웃 폴더: (찾을 수 없음, 파일 경로로 지정하세요)"),
+            Some(dir) => println!("Layouts folder:  {}", dir.display()),
+            None => println!("Layouts folder:  (not found; pass a file path instead)"),
         }
-        println!("진도 폴더:     {}", paths.profiles.display());
+        println!("Progress folder: {}", paths.profiles.display());
         return Ok(());
     }
     if !(1.0..=300.0).contains(&args.target_wpm) {
-        return Err("--target-wpm은 1~300 사이여야 합니다".into());
+        return Err("--target-wpm must be between 1 and 300".into());
     }
     if !(1.0..=100.0).contains(&args.target_acc) {
-        return Err("--target-acc는 1~100 사이여야 합니다".into());
+        return Err("--target-acc must be between 1 and 100".into());
     }
     let targets = Targets {
         wpm: args.target_wpm,
@@ -107,18 +108,18 @@ fn run_app(args: Args) -> Result<(), String> {
         (false, Ok(Some(p))) if p.is_valid_for(&layout) => (p, None),
         (false, Ok(Some(_))) => (
             Profile::new(&layout, &make_plan(&layout, &words)),
-            Some("레이아웃이 바뀌어서 진도를 새로 시작합니다".to_string()),
+            Some("Layout changed, starting progress over".to_string()),
         ),
         (false, Err(e)) => {
             return Err(format!(
-                "진도 파일을 읽을 수 없습니다 ({}): {e}",
+                "cannot read progress file ({}): {e}",
                 save_path.display()
             ));
         }
         _ => {
             let p = Profile::new(&layout, &make_plan(&layout, &words));
             let keys: Vec<String> = p.unlocked_keys().iter().map(|&k| lang.key_label(k)).collect();
-            let msg = format!("시작 키: {}", keys.join(" "));
+            let msg = format!("Start keys: {}", keys.join(" "));
             (p, Some(msg))
         }
     };
@@ -128,7 +129,7 @@ fn run_app(args: Args) -> Result<(), String> {
         (m, false) => {
             let list: String = missing.iter().collect();
             Some(format!(
-                "{}레이아웃에 없는 글자: {list}",
+                "{}Letters missing from layout: {list}",
                 m.map(|m| m + " · ").unwrap_or_default()
             ))
         }

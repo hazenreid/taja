@@ -31,7 +31,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     draw_progress(f, app, progress);
 
     let mut help = vec![Span::styled(
-        " Esc 종료 · Tab 새 줄",
+        " Esc quit · Tab new line",
         Style::new().fg(Color::DarkGray),
     )];
     if let Some(err) = &app.save_error {
@@ -51,9 +51,9 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(format!(" {} · {}  ", app.layout.name, app.lang().name())),
-        Span::styled("키 ", dim),
+        Span::styled("keys ", dim),
         Span::raw(format!("{}/{}  ", app.profile.unlocked, app.profile.order.len())),
-        Span::styled("목표 ", dim),
+        Span::styled("target ", dim),
         Span::raw(format!(
             "{} · {:.0}%  ",
             app.speed(app.targets.wpm),
@@ -61,11 +61,11 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         )),
     ];
     if let Some(wpm) = app.lesson.wpm(Instant::now()) {
-        spans.push(Span::styled("지금 ", dim));
+        spans.push(Span::styled("now ", dim));
         spans.push(Span::raw(format!("{}  ", app.speed(wpm))));
     }
     if let Some((wpm, acc)) = app.last_line {
-        spans.push(Span::styled("지난 줄 ", dim));
+        spans.push(Span::styled("last line ", dim));
         spans.push(Span::raw(format!("{} · {:.0}%", app.speed(wpm), acc * 100.0)));
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -128,11 +128,11 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
     ];
     let focus = app
         .focus()
-        .map(|c| format!(" 집중 키: {} ", app.label(c)))
+        .map(|c| format!(" focus: {} ", app.label(c)))
         .unwrap_or_default();
     let block = Block::new()
         .borders(Borders::ALL)
-        .title(" 연습 ")
+        .title(" Practice ")
         .title_bottom(Line::from(focus).right_aligned());
     f.render_widget(
         Paragraph::new(text).alignment(Alignment::Center).block(block),
@@ -178,13 +178,13 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     lines.push(Line::from(Span::styled(format!("{:^21}", "space"), space_style)));
 
     let hint = match next {
-        Some(' ') => "다음 키: 스페이스 (엄지)".to_string(),
-        Some(c) => format!("다음 키 {}", app.describe_key(c)),
+        Some(' ') => "Next key: space (thumb)".to_string(),
+        Some(c) => format!("Next key {}", app.describe_key(c)),
         None => String::new(),
     };
     lines.push(Line::styled(hint, Style::new().fg(Color::Cyan)));
 
-    let block = Block::new().borders(Borders::ALL).title(" 키보드 ");
+    let block = Block::new().borders(Borders::ALL).title(" Keyboard ");
     f.render_widget(
         Paragraph::new(lines).alignment(Alignment::Center).block(block),
         area,
@@ -271,16 +271,16 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
         .collect();
     let next = match app.profile.next_locked() {
         Some(k) => format!(
-            "다음 언락: {} — 열린 키가 모두 목표를 넘으면 열립니다",
+            "Next unlock: {} - opens when every unlocked key reaches the target",
             app.describe_key(k)
         ),
-        None => "모든 키를 열었습니다!".to_string(),
+        None => "All keys unlocked!".to_string(),
     };
     lines.push(Line::styled(next, Style::new().fg(Color::DarkGray)));
 
     let title = match app.lang() {
-        Lang::En => " 키별 진도 (WPM · 정확도) ",
-        Lang::Ko => " 키별 진도 (타수 · 정확도) ",
+        Lang::En => " Per-key progress (WPM · accuracy) ",
+        Lang::Ko => " Per-key progress (KPM · accuracy) ",
     };
     let block = Block::new().borders(Borders::ALL).title(title);
     f.render_widget(Paragraph::new(lines).block(block), area);

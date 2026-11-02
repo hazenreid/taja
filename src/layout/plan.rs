@@ -59,7 +59,7 @@ pub fn start_keys(layout: &Layout, words: &WordList) -> Vec<char> {
 }
 
 pub fn make_plan(layout: &Layout, words: &WordList) -> Plan {
-    let cost_of = |ch: char| key_cost(layout, ch).expect("레이아웃에 있는 키");
+    let cost_of = |ch: char| key_cost(layout, ch).expect("key must be in the layout");
     // 레이아웃의 글자 키 + 이 언어에서 쓰는 Shift 키.
     let mut keys: Vec<char> = layout.iter().map(|p| p.2).filter(|&c| is_letter(c)).collect();
     let shifted: Vec<char> = words

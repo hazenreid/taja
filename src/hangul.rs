@@ -99,7 +99,7 @@ fn split(c: char) -> Option<(usize, usize, usize)> {
 
 fn compose(cho: usize, jung: usize, jong: usize) -> char {
     let i = (cho as u32 * JUNG_COUNT + jung as u32) * JONG_COUNT + jong as u32;
-    char::from_u32(BASE + i).expect("올바른 음절 번호")
+    char::from_u32(BASE + i).expect("valid syllable index")
 }
 
 /// 음절 하나를 치는 키 순서.

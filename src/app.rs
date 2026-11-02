@@ -20,7 +20,7 @@ use crate::words::{Lang, WordList};
 pub const MIN_LINE: usize = 20;
 pub const MAX_LINE: usize = 56;
 
-const IME_WARNING: &str = "한/영 키를 눌러 영문 입력으로 바꿔 주세요 (한글 조합은 프로그램이 합니다)";
+const IME_WARNING: &str = "Switch your OS input to English (Han/Yeong key) - taja composes Hangul itself";
 
 pub struct App {
     pub layout: Layout,
@@ -149,7 +149,7 @@ impl App {
         });
 
         if let Some(k) = self.profile.try_unlock(self.targets) {
-            self.message = Some(format!("새 키 언락: {}", self.describe_key(k)));
+            self.message = Some(format!("New key unlocked: {}", self.describe_key(k)));
             // 새 키가 바로 나오도록 다음 줄도 새로 만듭니다.
             self.regenerate();
         } else {
@@ -184,14 +184,14 @@ impl App {
     pub fn speed(&self, wpm: f64) -> String {
         match self.lang() {
             Lang::En => format!("{wpm:.0} WPM"),
-            Lang::Ko => format!("{:.0}타", wpm * 5.0),
+            Lang::Ko => format!("{:.0} KPM", wpm * 5.0),
         }
     }
 
     pub fn save(&mut self) {
         self.save_error = save_profile(&self.save_path, &self.profile)
             .err()
-            .map(|e| format!("저장 실패: {e}"));
+            .map(|e| format!("Save failed: {e}"));
     }
 }
 

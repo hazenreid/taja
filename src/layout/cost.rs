@@ -33,23 +33,23 @@ pub fn finger(col: usize) -> (Hand, Finger) {
 pub fn finger_name(col: usize) -> String {
     let (hand, finger) = finger(col);
     let hand = match hand {
-        Hand::Left => "왼손",
-        Hand::Right => "오른손",
+        Hand::Left => "left",
+        Hand::Right => "right",
     };
     let finger = match finger {
-        Finger::Pinky => "새끼",
-        Finger::Ring => "약지",
-        Finger::Middle => "중지",
-        Finger::Index => "검지",
+        Finger::Pinky => "pinky",
+        Finger::Ring => "ring",
+        Finger::Middle => "middle",
+        Finger::Index => "index",
     };
     format!("{hand} {finger}")
 }
 
 pub fn row_name(row: usize) -> &'static str {
     match row {
-        0 => "윗줄",
-        1 => "홈열",
-        _ => "아랫줄",
+        0 => "top row",
+        1 => "home row",
+        _ => "bottom row",
     }
 }
 
@@ -82,6 +82,6 @@ mod tests {
         assert_eq!(finger(3), (Hand::Left, Finger::Index));
         assert_eq!(finger(4), (Hand::Left, Finger::Index));
         assert_eq!(finger(9), (Hand::Right, Finger::Pinky));
-        assert_eq!(finger_name(7), "오른손 중지");
+        assert_eq!(finger_name(7), "right middle");
     }
 }

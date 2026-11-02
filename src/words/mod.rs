@@ -92,8 +92,8 @@ impl Lang {
 
     pub fn name(self) -> &'static str {
         match self {
-            Lang::En => "영어",
-            Lang::Ko => "한글",
+            Lang::En => "English",
+            Lang::Ko => "Korean",
         }
     }
 }
