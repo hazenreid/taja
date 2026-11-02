@@ -9,10 +9,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::App;
-use crate::layout::{COLS, ROWS};
+use crate::layout::COLS;
 use crate::words::{Lang, char_width};
 
-const ROW_INDENT: [usize; ROWS] = [0, 1, 3];
 const BAR: usize = 8;
 const ENTRY_WIDTH: usize = 22;
 
@@ -144,11 +143,11 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
 fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     let next = app.lesson.current();
     let focus = app.focus();
-    let max_indent = ROW_INDENT[ROWS - 1];
 
     let mut lines: Vec<Line> = Vec::new();
     for (r, row) in app.layout.keys.iter().enumerate() {
-        let mut spans = vec![Span::raw(" ".repeat(ROW_INDENT[r]))];
+        // 격자(오소리니어) 배열: 줄마다 들여쓰지 않아서 키가 세로로 맞춰집니다.
+        let mut spans = Vec::new();
         for c in 0..row.len() {
             if c == COLS / 2 {
                 spans.push(Span::raw("  "));
@@ -168,8 +167,6 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
             }
             spans.push(Span::raw(" "));
         }
-        // 가운데 정렬해도 줄마다 엇갈린 모양이 유지되도록 오른쪽도 채웁니다.
-        spans.push(Span::raw(" ".repeat(max_indent - ROW_INDENT[r])));
         lines.push(Line::from(spans));
     }
 
