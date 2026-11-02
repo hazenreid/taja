@@ -19,7 +19,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let [header, practice, keyboard, progress, footer] = Split::vertical([
         Constraint::Length(1),
         Constraint::Length(6),
-        Constraint::Length(6),
+        Constraint::Length(5),
         Constraint::Min(4),
         Constraint::Length(1),
     ])
@@ -162,13 +162,6 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
         }
         lines.push(Line::from(spans));
     }
-
-    let hint = match next {
-        Some(' ') => "Next key: space (thumb)".to_string(),
-        Some(c) => format!("Next key {}", app.describe_key(c)),
-        None => String::new(),
-    };
-    lines.push(Line::styled(hint, Style::new().fg(Color::Cyan)));
 
     let block = Block::new().borders(Borders::ALL).title(" Keyboard ");
     f.render_widget(
