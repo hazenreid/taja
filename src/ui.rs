@@ -9,8 +9,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::App;
-use crate::layout::cost::{finger_name, row_name};
 use crate::layout::{COLS, ROWS};
+use crate::words::{Lang, char_width};
 
 const ROW_INDENT: [usize; ROWS] = [0, 1, 3];
 const BAR: usize = 8;
@@ -51,60 +51,68 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
                 .bg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(format!(" {}  ", app.layout.name)),
+        Span::raw(format!(" {} · {}  ", app.layout.name, app.lang().name())),
         Span::styled("키 ", dim),
         Span::raw(format!("{}/{}  ", app.profile.unlocked, app.profile.order.len())),
         Span::styled("목표 ", dim),
         Span::raw(format!(
-            "{:.0} WPM · {:.0}%  ",
-            app.targets.wpm,
+            "{} · {:.0}%  ",
+            app.speed(app.targets.wpm),
             app.targets.accuracy * 100.0
         )),
     ];
     if let Some(wpm) = app.lesson.wpm(Instant::now()) {
         spans.push(Span::styled("지금 ", dim));
-        spans.push(Span::raw(format!("{wpm:.0} WPM  ")));
+        spans.push(Span::raw(format!("{}  ", app.speed(wpm))));
     }
     if let Some((wpm, acc)) = app.last_line {
         spans.push(Span::styled("지난 줄 ", dim));
-        spans.push(Span::raw(format!("{wpm:.0} WPM · {:.0}%", acc * 100.0)));
+        spans.push(Span::raw(format!("{} · {:.0}%", app.speed(wpm), acc * 100.0)));
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
     let lesson = &app.lesson;
+    let pos = lesson.pos;
     let blocked = lesson.is_blocked();
-    let current: Vec<Span> = lesson
-        .text
+
+    let target: Vec<Span> = app
+        .target
+        .units
         .iter()
-        .enumerate()
-        .map(|(i, &ch)| {
-            let style = if i < lesson.pos {
-                if lesson.had_error[i] {
-                    Style::new().fg(Color::Red)
-                } else {
-                    Style::new().fg(Color::Green)
-                }
-            } else if i == lesson.pos {
-                if blocked {
-                    Style::new()
-                        .fg(Color::White)
-                        .bg(Color::Red)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::new()
-                        .fg(Color::Black)
-                        .bg(Color::White)
-                        .add_modifier(Modifier::BOLD)
-                }
+        .map(|u| {
+            let style = if u.end <= pos {
+                let error = lesson.had_error[u.start..u.end].iter().any(|&e| e);
+                Style::new().fg(if error { Color::Red } else { Color::Green })
+            } else if u.start <= pos {
+                let bg = if blocked { Color::Red } else { Color::White };
+                let fg = if blocked { Color::White } else { Color::Black };
+                Style::new().fg(fg).bg(bg).add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(Color::White)
             };
-            Span::styled(ch.to_string(), style)
+            Span::styled(u.ch.to_string(), style)
         })
         .collect();
 
+    // 한글: 친 키가 조합된 모습을 목표 줄 바로 아래에 같은 폭으로 보여줍니다.
+    let typed = match app.lang() {
+        Lang::En => Line::raw(""),
+        Lang::Ko => Line::from(
+            app.target
+                .units
+                .iter()
+                .map(|u| match app.target.typed_form(u, pos) {
+                    Some(c) if pos < u.end => Span::styled(c.to_string(), Style::new().fg(Color::Cyan)),
+                    Some(c) => Span::styled(c.to_string(), Style::new().fg(Color::DarkGray)),
+                    None => Span::raw(" ".repeat(char_width(u.ch))),
+                })
+                .collect::<Vec<_>>(),
+        ),
+    };
+
+    let next: String = app.next.units.iter().map(|u| u.ch).collect();
     let message = match &app.message {
         Some(m) => Line::styled(
             m.clone(),
@@ -114,12 +122,15 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
     };
     let text = vec![
         Line::raw(""),
-        Line::from(current),
-        Line::raw(""),
-        Line::styled(app.next_line.clone(), Style::new().fg(Color::DarkGray)),
+        Line::from(target),
+        typed,
+        Line::styled(next, Style::new().fg(Color::DarkGray)),
         message,
     ];
-    let focus = app.focus().map(|c| format!(" 집중 키: {c} ")).unwrap_or_default();
+    let focus = app
+        .focus()
+        .map(|c| format!(" 집중 키: {} ", app.label(c)))
+        .unwrap_or_default();
     let block = Block::new()
         .borders(Borders::ALL)
         .title(" 연습 ")
@@ -143,7 +154,16 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::raw("  "));
             }
             match app.layout.key_at(r, c) {
-                Some(ch) => spans.push(Span::styled(format!(" {ch} "), key_style(app, ch, next, focus))),
+                Some(ch) => {
+                    let label = app.label(ch);
+                    // 칸 폭을 3으로 맞춤 (한글 자모는 2칸).
+                    let cell = if char_width(label.chars().next().unwrap_or(' ')) == 2 {
+                        format!(" {label}")
+                    } else {
+                        format!(" {label} ")
+                    };
+                    spans.push(Span::styled(cell, key_style(app, ch, next, focus)));
+                }
                 None => spans.push(Span::styled(" · ", Style::new().fg(Color::DarkGray))),
             }
             spans.push(Span::raw(" "));
@@ -160,9 +180,9 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     };
     lines.push(Line::from(Span::styled(format!("{:^21}", "space"), space_style)));
 
-    let hint = match next.and_then(|c| app.layout.position(c).map(|p| (c, p))) {
-        Some((c, (r, col))) => format!("다음 키 '{c}': {} · {}", finger_name(col), row_name(r)),
-        None if next == Some(' ') => "다음 키: 스페이스 (엄지)".to_string(),
+    let hint = match next {
+        Some(' ') => "다음 키: 스페이스 (엄지)".to_string(),
+        Some(c) => format!("다음 키 {}", app.describe_key(c)),
         None => String::new(),
     };
     lines.push(Line::styled(hint, Style::new().fg(Color::Cyan)));
@@ -181,6 +201,13 @@ fn key_style(app: &App, ch: char, next: Option<char>, focus: Option<char>) -> St
             .bg(Color::Cyan)
             .add_modifier(Modifier::BOLD);
     }
+    // Shift 글자(예: ㅆ = Shift + t)를 칠 차례면 다른 색으로.
+    if next.is_some_and(|n| n.is_ascii_uppercase() && n.to_ascii_lowercase() == ch) {
+        return Style::new()
+            .fg(Color::Black)
+            .bg(Color::Magenta)
+            .add_modifier(Modifier::BOLD);
+    }
     if !app.profile.is_unlocked(ch) {
         return Style::new().fg(Color::DarkGray);
     }
@@ -195,6 +222,10 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
     let inner_width = area.width.saturating_sub(2) as usize;
     let per_row = (inner_width / ENTRY_WIDTH).max(1);
     let focus = app.focus();
+    let speed_factor = match app.lang() {
+        Lang::En => 1.0,
+        Lang::Ko => 5.0,
+    };
 
     let entries: Vec<Vec<Span>> = app
         .profile
@@ -211,22 +242,28 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Color::White
             };
-            let wpm = stats
+            let speed = stats
                 .wpm()
-                .map(|w| format!("{w:>4.0}"))
+                .map(|w| format!("{:>4.0}", w * speed_factor))
                 .unwrap_or_else(|| "   -".into());
             let acc = stats
                 .accuracy()
                 .map(|a| format!(" {:>3.0}%", a * 100.0))
                 .unwrap_or_else(|| "    -".into());
+            let label = app.label(k);
+            let pad = if char_width(label.chars().next().unwrap_or(' ')) == 2 {
+                ""
+            } else {
+                " "
+            };
             vec![
                 Span::styled(
-                    format!("{k} "),
+                    format!("{label}{pad} "),
                     Style::new().fg(color).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled("█".repeat(filled), Style::new().fg(color)),
                 Span::styled("░".repeat(BAR - filled), Style::new().fg(Color::DarkGray)),
-                Span::raw(format!("{wpm}{acc}  ")),
+                Span::raw(format!("{speed}{acc}  ")),
             ]
         })
         .collect();
@@ -236,13 +273,18 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
         .map(|row| Line::from(row.concat()))
         .collect();
     let next = match app.profile.next_locked() {
-        Some(k) => format!("다음 언락: '{k}' — 열린 키가 모두 목표를 넘으면 열립니다"),
+        Some(k) => format!(
+            "다음 언락: {} — 열린 키가 모두 목표를 넘으면 열립니다",
+            app.describe_key(k)
+        ),
         None => "모든 키를 열었습니다!".to_string(),
     };
     lines.push(Line::styled(next, Style::new().fg(Color::DarkGray)));
 
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title(" 키별 진도 (WPM · 정확도) ");
+    let title = match app.lang() {
+        Lang::En => " 키별 진도 (WPM · 정확도) ",
+        Lang::Ko => " 키별 진도 (타수 · 정확도) ",
+    };
+    let block = Block::new().borders(Borders::ALL).title(title);
     f.render_widget(Paragraph::new(lines).block(block), area);
 }

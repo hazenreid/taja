@@ -7,24 +7,29 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::hangul;
 use crate::layout::Layout;
 use crate::layout::cost::{finger_name, row_name};
 use crate::lesson::{Lesson, Outcome};
 use crate::progress::{LineRecord, Profile, Targets};
 use crate::storage::save_profile;
-use crate::words::WordList;
+use crate::target::Target;
 use crate::words::line::build_line;
+use crate::words::{Lang, WordList};
 
 pub const MIN_LINE: usize = 20;
 pub const MAX_LINE: usize = 56;
+
+const IME_WARNING: &str = "한/영 키를 눌러 영문 입력으로 바꿔 주세요 (한글 조합은 프로그램이 합니다)";
 
 pub struct App {
     pub layout: Layout,
     pub words: WordList,
     pub profile: Profile,
     pub targets: Targets,
+    pub target: Target,
     pub lesson: Lesson,
-    pub next_line: String,
+    pub next: Target,
     pub message: Option<String>,
     pub last_line: Option<(f64, f64)>,
     pub save_path: PathBuf,
@@ -48,8 +53,9 @@ impl App {
             words,
             profile,
             targets,
+            target: Target::default(),
             lesson: Lesson::new(""),
-            next_line: String::new(),
+            next: Target::default(),
             message,
             last_line: None,
             save_path,
@@ -62,21 +68,36 @@ impl App {
         app
     }
 
+    pub fn lang(&self) -> Lang {
+        self.words.lang
+    }
+
     pub fn focus(&self) -> Option<char> {
         self.profile.focus(self.targets)
     }
 
-    fn make_line(&mut self) -> String {
+    fn make_line(&mut self) -> Target {
         let focus = self.focus();
         let keys = self.profile.unlocked_keys().to_vec();
-        build_line(&mut self.rng, &self.words, &keys, focus, self.line_width)
+        Target::from_items(&build_line(
+            &mut self.rng,
+            &self.words,
+            &keys,
+            focus,
+            self.line_width,
+        ))
+    }
+
+    fn start(&mut self, target: Target) {
+        self.lesson = Lesson::new(&target.keys.iter().collect::<String>());
+        self.target = target;
     }
 
     /// 지금 줄과 다음 줄을 새로 만듭니다.
     pub fn regenerate(&mut self) {
         let line = self.make_line();
-        self.lesson = Lesson::new(&line);
-        self.next_line = self.make_line();
+        self.start(line);
+        self.next = self.make_line();
     }
 
     pub fn set_width(&mut self, terminal_width: u16) {
@@ -97,6 +118,13 @@ impl App {
     }
 
     pub fn type_char(&mut self, c: char, now: Instant) {
+        if hangul::is_hangul_input(c) {
+            self.message = Some(IME_WARNING.to_string());
+            return;
+        }
+        if self.message.as_deref() == Some(IME_WARNING) {
+            self.message = None;
+        }
         if let Outcome::Correct { ch, sample } = self.lesson.type_char(c, now) {
             self.profile.record(ch, sample);
             if self.lesson.is_done() {
@@ -121,22 +149,42 @@ impl App {
         });
 
         if let Some(k) = self.profile.try_unlock(self.targets) {
-            self.message = Some(self.describe_unlock(k));
+            self.message = Some(format!("새 키 언락: {}", self.describe_key(k)));
             // 새 키가 바로 나오도록 다음 줄도 새로 만듭니다.
             self.regenerate();
         } else {
             self.message = None;
-            let next = std::mem::take(&mut self.next_line);
-            self.lesson = Lesson::new(&next);
-            self.next_line = self.make_line();
+            let next = std::mem::take(&mut self.next);
+            self.start(next);
+            self.next = self.make_line();
         }
         self.save();
     }
 
-    fn describe_unlock(&self, k: char) -> String {
-        match self.layout.position(k) {
-            Some((r, c)) => format!("새 키 언락: '{k}'  ({}, {})", finger_name(c), row_name(r)),
-            None => format!("새 키 언락: '{k}'"),
+    /// 키 이름 (한글이면 자모).
+    pub fn label(&self, key: char) -> String {
+        self.lang().key_label(key)
+    }
+
+    /// 예: `'e' (왼손 중지, 윗줄)`, `'ㅆ' (Shift + t, 왼손 검지, 윗줄)`.
+    pub fn describe_key(&self, k: char) -> String {
+        let base = k.to_ascii_lowercase();
+        let press = match (self.lang(), k.is_ascii_uppercase()) {
+            (Lang::En, _) => String::new(),
+            (Lang::Ko, true) => format!("Shift + {base}, "),
+            (Lang::Ko, false) => format!("{base}, "),
+        };
+        match self.layout.position(base) {
+            Some((r, c)) => format!("'{}' ({press}{}, {})", self.label(k), finger_name(c), row_name(r)),
+            None => format!("'{}'", self.label(k)),
+        }
+    }
+
+    /// 속도 표시. 영어는 WPM, 한글은 분당 타수(= WPM × 5).
+    pub fn speed(&self, wpm: f64) -> String {
+        match self.lang() {
+            Lang::En => format!("{wpm:.0} WPM"),
+            Lang::Ko => format!("{:.0}타", wpm * 5.0),
         }
     }
 
@@ -153,32 +201,64 @@ mod tests {
     use crate::layout::plan::make_plan;
     use std::time::Duration;
 
-    #[test]
-    fn typing_lines_unlocks_next_key() {
+    fn app_for(words: WordList, name: &str) -> (App, PathBuf) {
         let layout = Layout::qwerty();
-        let words = WordList::english();
         let profile = Profile::new(&layout, &make_plan(&layout, &words));
-        let dir = std::env::temp_dir().join(format!("taja-app-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("taja-app-{name}-{}", std::process::id()));
         let targets = Targets {
             wpm: 25.0,
             accuracy: 0.95,
         };
-        let mut app = App::new(layout, words, profile, targets, dir.join("p.json"), None);
+        (
+            App::new(layout, words, profile, targets, dir.join("p.json"), None),
+            dir,
+        )
+    }
 
-        // 150ms 간격으로 완벽하게 계속 치면 언젠가 'e'가 열려야 합니다.
+    /// 150ms 간격으로 완벽하게 계속 쳐서 다음 키가 열릴 때까지.
+    fn type_until_unlock(app: &mut App) {
+        let start = app.profile.unlocked;
         let mut now = Instant::now();
-        for _ in 0..200 {
-            if app.profile.unlocked > 7 {
-                break;
+        for _ in 0..300 {
+            if app.profile.unlocked > start {
+                return;
             }
-            for c in app.lesson.text.clone() {
+            for c in app.target.keys.clone() {
                 now += Duration::from_millis(150);
                 app.type_char(c, now);
             }
         }
+        panic!("다음 키가 열리지 않음");
+    }
+
+    #[test]
+    fn typing_lines_unlocks_next_key() {
+        let (mut app, dir) = app_for(WordList::english(), "en");
+        type_until_unlock(&mut app);
         assert_eq!(app.profile.unlocked_keys().last(), Some(&'e'));
         assert!(app.message.as_deref().unwrap().contains("'e'"));
         assert!(app.save_error.is_none(), "{:?}", app.save_error);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn korean_typing_unlocks_next_key() {
+        let (mut app, dir) = app_for(WordList::korean(), "ko");
+        let before = app.profile.unlocked;
+        type_until_unlock(&mut app);
+        assert_eq!(app.profile.unlocked, before + 1);
+        let new_key = *app.profile.unlocked_keys().last().unwrap();
+        assert!(app.message.as_deref().unwrap().contains(&app.label(new_key)));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn warns_when_korean_ime_is_on() {
+        let (mut app, dir) = app_for(WordList::korean(), "ime");
+        let pos = app.lesson.pos;
+        app.type_char('ㅎ', Instant::now());
+        assert_eq!(app.lesson.pos, pos);
+        assert_eq!(app.message.as_deref(), Some(IME_WARNING));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

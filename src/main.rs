@@ -1,8 +1,10 @@
 mod app;
+mod hangul;
 mod layout;
 mod lesson;
 mod progress;
 mod storage;
+mod target;
 mod ui;
 mod words;
 
@@ -10,7 +12,7 @@ use std::io;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
@@ -19,7 +21,15 @@ use layout::Layout;
 use layout::plan::make_plan;
 use progress::{Profile, Targets};
 use storage::{Paths, load_profile};
-use words::WordList;
+use words::{Lang, WordList};
+
+#[derive(Clone, Copy, ValueEnum)]
+enum LangArg {
+    /// 영어
+    En,
+    /// 한글 (두벌식, 영어 레이아웃의 글자를 따라감: q=ㅂ, w=ㅈ …)
+    Ko,
+}
 
 /// 터미널 자판 학습기: 홈열 몇 개 키로 시작해서 목표 속도에 닿으면 다음 키를 엽니다.
 #[derive(Parser)]
@@ -29,7 +39,11 @@ struct Args {
     #[arg(short, long, default_value = "qwerty")]
     layout: String,
 
-    /// 다음 키를 열기 위한 키별 목표 속도 (WPM)
+    /// 연습할 언어
+    #[arg(long, value_enum, default_value = "en")]
+    lang: LangArg,
+
+    /// 다음 키를 열기 위한 키별 목표 속도 (WPM, 한글은 ×5 해서 타수로 표시)
     #[arg(long, default_value_t = 25.0)]
     target_wpm: f64,
 
@@ -78,8 +92,16 @@ fn run_app(args: Args) -> Result<(), String> {
     };
 
     let layout = Layout::load(&args.layout, paths.layouts.as_deref())?;
-    let words = WordList::english();
-    let save_path = paths.profile_file(&layout.name);
+    let lang = match args.lang {
+        LangArg::En => Lang::En,
+        LangArg::Ko => Lang::Ko,
+    };
+    let words = WordList::for_lang(lang);
+    // 진도는 레이아웃과 언어마다 따로.
+    let save_path = match lang {
+        Lang::En => paths.profile_file(&layout.name),
+        Lang::Ko => paths.profile_file(&format!("{}-ko", layout.name)),
+    };
 
     let (profile, message) = match (args.reset, load_profile(&save_path)) {
         (false, Ok(Some(p))) if p.is_valid_for(&layout) => (p, None),
@@ -95,7 +117,7 @@ fn run_app(args: Args) -> Result<(), String> {
         }
         _ => {
             let p = Profile::new(&layout, &make_plan(&layout, &words));
-            let keys: Vec<String> = p.unlocked_keys().iter().map(char::to_string).collect();
+            let keys: Vec<String> = p.unlocked_keys().iter().map(|&k| lang.key_label(k)).collect();
             let msg = format!("시작 키: {}", keys.join(" "));
             (p, Some(msg))
         }

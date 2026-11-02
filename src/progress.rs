@@ -117,7 +117,10 @@ impl Profile {
         self.layout_rows == layout.rows_as_strings()
             && self.stats.len() == self.order.len()
             && self.unlocked <= self.order.len()
-            && self.order.iter().all(|&c| layout.position(c).is_some())
+            && self
+                .order
+                .iter()
+                .all(|&c| layout.position(c.to_ascii_lowercase()).is_some())
     }
 
     pub fn unlocked_keys(&self) -> &[char] {
