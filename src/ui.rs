@@ -18,8 +18,8 @@ const ENTRY_WIDTH: usize = 22;
 pub fn draw(f: &mut Frame, app: &App) {
     let [header, practice, keyboard, progress, footer] = Split::vertical([
         Constraint::Length(1),
-        Constraint::Length(7),
-        Constraint::Length(7),
+        Constraint::Length(6),
+        Constraint::Length(6),
         Constraint::Min(4),
         Constraint::Length(1),
     ])
@@ -111,7 +111,6 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         ),
     };
 
-    let next: String = app.next.units.iter().map(|u| u.ch).collect();
     let message = match &app.message {
         Some(m) => Line::styled(
             m.clone(),
@@ -119,13 +118,7 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         ),
         None => Line::raw(""),
     };
-    let text = vec![
-        Line::raw(""),
-        Line::from(target),
-        typed,
-        Line::styled(next, Style::new().fg(Color::DarkGray)),
-        message,
-    ];
+    let text = vec![Line::raw(""), Line::from(target), typed, message];
     let focus = app
         .focus()
         .map(|c| format!(" focus: {} ", app.label(c)))
@@ -169,13 +162,6 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
         }
         lines.push(Line::from(spans));
     }
-
-    let space_style = if next == Some(' ') {
-        Style::new().fg(Color::Black).bg(Color::Cyan)
-    } else {
-        Style::new().fg(Color::White).bg(Color::DarkGray)
-    };
-    lines.push(Line::from(Span::styled(format!("{:^21}", "space"), space_style)));
 
     let hint = match next {
         Some(' ') => "Next key: space (thumb)".to_string(),
