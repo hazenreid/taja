@@ -125,7 +125,8 @@ mod tests {
     }
 
     /// 한글 단어 목록 (아직 프로그램에 연결하지 않은 데이터).
-    const KOREAN: [&str; 9] = [
+    const KOREAN: [&str; 10] = [
+        include_str!("../../assets/words/ko/subtitles/top.txt"),
         include_str!("../../assets/words/ko/basic.txt"),
         include_str!("../../assets/words/ko/short.txt"),
         include_str!("../../assets/words/ko/short2.txt"),
@@ -153,6 +154,6 @@ mod tests {
                 unique.insert(w);
             }
         }
-        assert!(unique.len() >= 2000, "한글 단어 수: {}", unique.len());
+        assert!(unique.len() >= 10_000, "한글 단어 수: {}", unique.len());
     }
 }

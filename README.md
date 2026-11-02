@@ -128,6 +128,14 @@ cargo test
 | `short.txt`, `short2.txt` | 받침 없는 단어, 받침 하나짜리 짧은 단어 (초반 단계용) |
 | `nouns.txt`, `daily.txt`, `themes.txt` | 주제별 명사, 일상 명사, 의성어·의태어 |
 | `verbs.txt`, `verbs2.txt`, `adjectives.txt` | 동사, 형용사, 부사와 활용형 |
+| `subtitles/top.txt` | 영화 자막 빈도순 상위 단어 약 9,600개 (`그래`, `있어`, `학교에서` 같은 실제 말투) |
+
+합치면 중복 없이 약 1만 1천 개입니다.
+
+`subtitles/top.txt`는 [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (Hermit Dave, OpenSubtitles 2018)의
+한국어 목록 상위 1만 개에서 가져왔고, **CC BY-SA 4.0** 라이선스를 따릅니다 (출처 표시, 같은 조건으로 배포).
+`scripts/import_ko_subtitles.py`로 다시 만들 수 있고, 한글만 남기고 욕설·성인 단어·흔한 외국 이름을 뺍니다.
+자막 특성상 영화 속 인물 이름이 일부 남아 있을 수 있습니다.
 
 ## 앞으로
 
