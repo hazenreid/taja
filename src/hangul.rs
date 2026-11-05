@@ -151,6 +151,21 @@ pub fn parts(allowed: &[char]) -> Parts {
     }
 }
 
+/// 이 키(들)로 치는 초성 번호.
+pub fn cho_with_keys(keys: &str) -> Option<usize> {
+    CHO_KEYS.iter().position(|k| *k == keys)
+}
+
+/// 키 하나로 치는 모음(겹모음이 아닌 것)인지.
+pub fn is_simple_jung(jung: usize) -> bool {
+    JUNG_KEYS[jung].len() == 1
+}
+
+/// 이 키(들)로 치는 중성 번호.
+pub fn jung_with_keys(keys: &str) -> Option<usize> {
+    JUNG_KEYS.iter().position(|k| *k == keys)
+}
+
 pub fn make_syllable(cho: usize, jung: usize, jong: usize) -> char {
     compose(cho, jung, jong)
 }
