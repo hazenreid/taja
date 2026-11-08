@@ -1,20 +1,26 @@
 //! 연습할 한 줄 만들기: 진짜 단어와 가짜 단어를 섞고, 모든 단어에 집중 키를 넣습니다.
 
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use super::generator::pick_weighted;
 use super::{Lang, WordList, display_width, key_bit, korean, mask_of};
 
+/// 틀렸던 단어를 다시 넣을 확률 (단어 자리마다).
+const REVIEW_RATE: f64 = 0.35;
 /// 진짜 단어가 이만큼 있으면 거의 진짜 단어만 씁니다.
 const ENOUGH_REAL_WORDS: f64 = 60.0;
 
 /// 한 줄의 단어 하나.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
     /// 화면에 보일 글자.
     pub text: String,
     /// 누를 키.
     pub keys: String,
+    /// 단어 목록에 있는 진짜 단어인지 (가짜 단어면 false).
+    #[serde(default)]
+    pub real: bool,
 }
 
 /// 열린 키로 가짜 단어 하나를 만듭니다.
@@ -27,18 +33,25 @@ fn pseudo(rng: &mut impl Rng, list: &WordList, keys: &[char], focus: Option<char
             (!w.is_empty()).then(|| Item {
                 text: w.clone(),
                 keys: w,
+                real: false,
             })
         }
-        Lang::Ko => korean::generate(rng, keys, focus).map(|(text, keys)| Item { text, keys }),
+        Lang::Ko => korean::generate(rng, keys, focus).map(|(text, keys)| Item {
+            text,
+            keys,
+            real: false,
+        }),
     }
 }
 
 /// `max_width`칸 안에 들어가는 한 줄 (한글은 2칸).
+/// `review`는 전에 틀린 단어들. 열린 키로만 되어 있고 집중 키가 든 것만 섞어 넣습니다.
 pub fn build_line(
     rng: &mut impl Rng,
     list: &WordList,
     unlocked: &[char],
     focus: Option<char>,
+    review: &[Item],
     max_width: usize,
 ) -> Vec<Item> {
     let keys: Vec<char> = unlocked
@@ -64,18 +77,32 @@ pub fn build_line(
         pick_weighted(rng, &options).map(|i| Item {
             text: real[i].text.clone(),
             keys: real[i].keys.clone(),
+            real: true,
         })
     };
+
+    let mut review: Vec<&Item> = review
+        .iter()
+        .filter(|r| r.keys.chars().all(|c| keys.contains(&c)))
+        .filter(|r| focus.is_none_or(|f| r.keys.contains(f)))
+        .collect();
 
     let mut items: Vec<Item> = Vec::new();
     let mut width = 0;
     for _ in 0..200 {
+        let again = if !review.is_empty() && rng.random_bool(REVIEW_RATE) {
+            let i = rng.random_range(0..review.len());
+            Some(review.swap_remove(i).clone())
+        } else {
+            None
+        };
         let real_word = if rng.random_bool(real_ratio) {
             pick_real(rng)
         } else {
             None
         };
-        let Some(item) = real_word
+        let Some(item) = again
+            .or(real_word)
             .or_else(|| pseudo(rng, list, &keys, focus))
             .or_else(|| pick_real(rng))
         else {
@@ -130,7 +157,7 @@ mod tests {
             for unlocked in sets {
                 let keys = chars(unlocked);
                 for _ in 0..100 {
-                    let items = build_line(&mut rng, &list, &keys, keys.last().copied(), 50);
+                    let items = build_line(&mut rng, &list, &keys, keys.last().copied(), &[], 50);
                     let text = line_text(&items);
                     assert!(!items.is_empty());
                     assert!(display_width(&text) <= 50, "{text}");
@@ -154,11 +181,35 @@ mod tests {
             let keys = chars(unlocked);
             for f in focuses.chars() {
                 for _ in 0..50 {
-                    for item in build_line(&mut rng, &list, &keys, Some(f), 50) {
+                    for item in build_line(&mut rng, &list, &keys, Some(f), &[], 50) {
                         assert!(item.keys.contains(f), "'{f}' not in {item:?}");
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn review_words_only_with_focus_key() {
+        let list = WordList::english();
+        let mut rng = StdRng::seed_from_u64(9);
+        let keys = chars("fjdkslaeit");
+        let word = |w: &str| Item {
+            text: w.into(),
+            keys: w.into(),
+            real: true,
+        };
+        // 'tide'에는 t가 있고 'side'에는 없음, 'tick'은 잠긴 키(c)가 있음.
+        let review = [word("tide"), word("side"), word("tick")];
+        let (mut tide, mut side, mut tick) = (0, 0, 0);
+        for _ in 0..200 {
+            for item in build_line(&mut rng, &list, &keys, Some('t'), &review, 50) {
+                tide += (item.text == "tide") as usize;
+                side += (item.text == "side") as usize;
+                tick += (item.text == "tick") as usize;
+            }
+        }
+        assert!(tide > 50, "tide {tide}");
+        assert_eq!((side, tick), (0, 0));
     }
 }

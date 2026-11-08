@@ -11,10 +11,19 @@ pub struct Unit {
     pub end: usize,
 }
 
+/// 줄 안의 단어 하나와 그 단어를 치는 키의 범위 `[start, end)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WordSpan {
+    pub item: Item,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Target {
     pub keys: Vec<char>,
     pub units: Vec<Unit>,
+    pub words: Vec<WordSpan>,
 }
 
 impl Target {
@@ -24,6 +33,7 @@ impl Target {
             if i > 0 {
                 t.push(' ', " ");
             }
+            let start = t.keys.len();
             let mut keys = item.keys.as_str();
             for ch in item.text.chars() {
                 let n = if hangul::is_syllable(ch) {
@@ -36,6 +46,11 @@ impl Target {
                 t.push(ch, head);
                 keys = rest;
             }
+            t.words.push(WordSpan {
+                item: item.clone(),
+                start,
+                end: t.keys.len(),
+            });
         }
         t
     }
@@ -75,6 +90,7 @@ mod tests {
         Item {
             text: text.into(),
             keys: keys.into(),
+            real: true,
         }
     }
 
@@ -84,6 +100,8 @@ mod tests {
         assert_eq!(t.keys.iter().collect::<String>(), "ask dad");
         assert_eq!(t.units.len(), 7);
         assert_eq!(t.width(), 7);
+        let spans: Vec<_> = t.words.iter().map(|w| (w.start, w.end)).collect();
+        assert_eq!(spans, [(0, 3), (4, 7)]);
     }
 
     #[test]
@@ -95,6 +113,7 @@ mod tests {
         assert_eq!((t.units[0].start, t.units[0].end), (0, 3));
         assert_eq!((t.units[3].start, t.units[3].end), (6, 9));
         assert_eq!(t.width(), 9);
+        assert_eq!((t.words[1].start, t.words[1].end), (6, 12));
         // '과'를 두 키(r h)까지 치면 '고'로 보입니다.
         assert_eq!(t.typed_form(&t.units[3], 8), Some('고'));
         assert_eq!(t.typed_form(&t.units[3], 6), None);

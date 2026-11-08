@@ -6,11 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::Layout;
 use crate::layout::plan::Plan;
+use crate::words::line::Item;
 
 /// 키마다 최근 몇 번의 입력으로 평가할지.
 pub const WINDOW: usize = 30;
 /// 언락 판정에 필요한 최소 입력 횟수.
 pub const MIN_SAMPLES: usize = 20;
+/// 틀린 단어는 이만큼만 보관 (넘치면 오래된 것부터 버림).
+pub const MAX_MISSED: usize = 100;
 /// 기록을 이만큼만 보관.
 const MAX_HISTORY: usize = 2000;
 
@@ -99,6 +102,9 @@ pub struct Profile {
     /// `order`와 같은 순서.
     pub stats: Vec<KeyStats>,
     pub history: Vec<LineRecord>,
+    /// 전에 틀린 진짜 단어 (오래된 것이 앞). 예전 진도 파일에는 없으므로 기본값은 빈 목록.
+    #[serde(default)]
+    pub missed: Vec<Item>,
 }
 
 impl Profile {
@@ -109,6 +115,7 @@ impl Profile {
             unlocked: plan.start_len,
             stats: vec![KeyStats::default(); plan.order.len()],
             history: Vec::new(),
+            missed: Vec::new(),
         }
     }
 
@@ -168,6 +175,18 @@ impl Profile {
             Some(next)
         } else {
             None
+        }
+    }
+
+    /// 단어 하나를 다 쳤을 때. 틀렸으면 목록에 넣고(진짜 단어만), 한 번에 맞혔으면 목록에서 뺍니다.
+    pub fn record_word(&mut self, item: &Item, had_error: bool) {
+        if !had_error {
+            self.missed.retain(|m| m.text != item.text);
+        } else if item.real && !self.missed.iter().any(|m| m.text == item.text) {
+            self.missed.push(item.clone());
+            if self.missed.len() > MAX_MISSED {
+                self.missed.remove(0);
+            }
         }
     }
 
@@ -288,5 +307,35 @@ mod tests {
         let back: Profile = serde_json::from_str(&json).unwrap();
         assert_eq!(p, back);
         assert!(back.is_valid_for(&Layout::qwerty()));
+    }
+
+    #[test]
+    fn remembers_missed_real_words() {
+        let mut p = profile();
+        let word = |w: &str, real: bool| Item {
+            text: w.into(),
+            keys: w.into(),
+            real,
+        };
+        p.record_word(&word("sad", true), true);
+        p.record_word(&word("sad", true), true); // 중복 없음
+        p.record_word(&word("fjdk", false), true); // 가짜 단어는 안 넣음
+        p.record_word(&word("lad", true), false); // 맞힌 단어는 안 넣음
+        assert_eq!(p.missed, [word("sad", true)]);
+        p.record_word(&word("sad", true), false); // 맞히면 빠짐
+        assert!(p.missed.is_empty());
+        for i in 0..MAX_MISSED + 5 {
+            p.record_word(&word(&format!("w{i}"), true), true);
+        }
+        assert_eq!(p.missed.len(), MAX_MISSED);
+        assert_eq!(p.missed[0].text, "w5");
+    }
+
+    #[test]
+    fn old_profiles_without_missed_still_load() {
+        let mut json: serde_json::Value = serde_json::to_value(profile()).unwrap();
+        json.as_object_mut().unwrap().remove("missed");
+        let p: Profile = serde_json::from_value(json).unwrap();
+        assert!(p.missed.is_empty());
     }
 }
