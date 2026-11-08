@@ -123,15 +123,9 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         .focus()
         .map(|c| format!(" focus: {} ", app.label(c)))
         .unwrap_or_default();
-    // 전에 틀린 단어 수 (집중 키가 든 것은 연습 줄에 다시 나옴).
-    let missed = match app.profile.missed.len() {
-        0 => String::new(),
-        n => format!(" missed words: {n} "),
-    };
     let block = Block::new()
         .borders(Borders::ALL)
         .title(" Practice ")
-        .title_bottom(Line::from(missed).left_aligned())
         .title_bottom(Line::from(focus).right_aligned());
     f.render_widget(
         Paragraph::new(text).alignment(Alignment::Center).block(block),
