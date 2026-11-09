@@ -68,19 +68,11 @@ pub fn build_line(
 
     // 진짜 단어는 집중 키가 들어간 것만.
     let mask = mask_of(keys.iter().copied());
-    let mut real: Vec<_> = list
+    let real: Vec<_> = list
         .available(mask)
         .into_iter()
         .filter(|w| focus.is_none_or(|f| w.uses(f)))
         .collect();
-    // 내장 단어가 모자라면 보조 사전(맥의 /usr/share/dict/words 등)에서 채웁니다.
-    if real.len() < ENOUGH_REAL_WORDS {
-        real.extend(
-            list.available_extra(mask)
-                .into_iter()
-                .filter(|w| focus.is_none_or(|f| w.uses(f))),
-        );
-    }
     // 진짜 단어를 먼저 쓰고, 다 쓰면(같은 단어 MAX_REPEAT번) 가짜 단어로 채웁니다.
     // 집중 키가 든 진짜 단어가 ENOUGH_REAL_WORDS개 이상이면 사실상 진짜 단어만 나옵니다.
     let enough = real.len() >= ENOUGH_REAL_WORDS;
@@ -272,25 +264,5 @@ mod tests {
                 assert_eq!(count.len(), real_with_j, "{items:?}");
             }
         }
-    }
-
-    #[test]
-    fn extra_dictionary_fills_in_when_built_in_words_are_few() {
-        let mut list = WordList::english();
-        list.add_extra("jak\ndaj\nJaffa\nfjord\n");
-        let mut rng = StdRng::seed_from_u64(12);
-        let keys = chars("fjdksla");
-        let mut seen = std::collections::HashSet::new();
-        for _ in 0..50 {
-            for item in build_line(&mut rng, &list, &keys, Some('j'), &[], 50) {
-                if item.real {
-                    seen.insert(item.text);
-                }
-            }
-        }
-        // fjord는 잠긴 키(o, r)가 있어서 안 나옴.
-        let expected: std::collections::HashSet<String> =
-            ["jak", "daj", "jaffa"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(seen, expected);
     }
 }

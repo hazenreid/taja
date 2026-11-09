@@ -60,10 +60,9 @@ struct Args {
     #[arg(long)]
     paths: bool,
 
-    /// Extra word list used when built-in English words with the focus key run short
-    /// (one word per line; default /usr/share/dict/words if it exists; "none" to turn off)
-    #[arg(long)]
-    dict: Option<String>,
+    /// English word list to practice from (one word per line)
+    #[arg(long, default_value = words::DEFAULT_DICT)]
+    dict: String,
 }
 
 fn main() -> ExitCode {
@@ -102,20 +101,23 @@ fn run_app(args: Args) -> Result<(), String> {
         LangArg::En => Lang::En,
         LangArg::Ko => Lang::Ko,
     };
-    let mut words = WordList::for_lang(lang);
-    if lang == Lang::En {
-        let path = args.dict.as_deref().unwrap_or(words::DEFAULT_DICT);
-        if path != "none" {
-            match std::fs::read_to_string(path) {
-                Ok(text) => {
-                    words.add_extra(&text);
-                }
-                // 기본 경로가 없으면 조용히 넘어가고, 직접 지정한 파일이 없으면 알려줍니다.
-                Err(_) if args.dict.is_none() => {}
-                Err(e) => return Err(format!("cannot read dictionary ({path}): {e}")),
+    // 영어는 사전 파일에서만, 한글은 내장 단어 목록에서.
+    let words = match lang {
+        Lang::En => {
+            let text = std::fs::read_to_string(&args.dict).map_err(|e| {
+                format!(
+                    "cannot read dictionary ({}): {e}\nPass a word list with --dict <path>",
+                    args.dict
+                )
+            })?;
+            let words = WordList::english_from(&text);
+            if words.words.is_empty() {
+                return Err(format!("no usable words in dictionary ({})", args.dict));
             }
+            words
         }
-    }
+        Lang::Ko => WordList::korean(),
+    };
     // 진도는 레이아웃과 언어마다 따로.
     let save_path = match lang {
         Lang::En => paths.profile_file(&layout.name),

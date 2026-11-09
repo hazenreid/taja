@@ -29,7 +29,7 @@ cargo run --release -- --help           # 옵션 보기
 - `--target-acc 95`: 키별 목표 정확도 % (기본 95)
 - `--reset`: 이 레이아웃의 진도를 지우고 처음부터
 - `--paths`: 레이아웃 폴더와 진도 폴더 위치 보기
-- `--dict <경로>`: 보조 영어 사전 (기본 `/usr/share/dict/words`, 끄려면 `--dict none`)
+- `--dict <경로>`: 영어 단어를 가져올 사전 파일 (기본 `/usr/share/dict/words`)
 
 ## 레이아웃 파일
 
@@ -57,7 +57,7 @@ kvgd..hcuw
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과: 시작 키 `r o e t` (4개) → `s n i a d c l g p m u h f b y v w k x q j z`
+이 배열의 계산 결과 (맥 웹스터 사전 기준): 시작 키 `r o e t` (4개) → `n i a s l c d m u h p g b y f v k w x z j q`
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -69,7 +69,8 @@ cargo run --release -- --layout layouts/mine.txt
   - QWERTY: `f j d k s l`에는 모음이 없어서 `a`까지 7개 (`fjdksla`)
   - 홈열이 `arstdhneio`인 레이아웃: `t n s e` 4개로 충분
 - **언락 순서**: "이 키를 열면 새로 칠 수 있게 되는 단어의 양 ÷ 그 자리의 치기 어려운 정도"가 가장 큰 키부터
-  - QWERTY 결과: `fjdksla` → `e i r t c o n g u m p h v y w b x q z`
+  - QWERTY 결과 (맥 웹스터 사전 기준): `fjdksla` → `e i r t o c n u m h g p y b v w x z q`
+  - 시작 키와 언락 순서는 사전 파일로 계산하므로, 다른 사전을 쓰면 달라질 수 있음
 
 진도는 레이아웃마다 따로 저장됩니다 (Linux: `~/.local/share/taja/profiles/<이름>.json`).
 레이아웃 파일 내용이 바뀌면 진도를 새로 시작합니다.
@@ -91,22 +92,15 @@ cargo run --release -- --layout layouts/mine.txt
 
 ## 연습 문장
 
-- 내장 영어 단어 목록(`assets/words/`, 약 1만 1천 개)에서 열린 키로만 된 단어를 고름
-  - `common.txt`: 아주 흔한 기본 단어 (가중치 3)
-  - `scowl/level10.txt`: SCOWL 10단계, 가장 흔한 단어 약 4천 개 (가중치 2)
-  - `early.txt`, `verbs.txt`, `nouns.txt`, `adjectives.txt`, `extra.txt`: 직접 고른 단계별·품사별 단어 (가중치 1)
-  - `scowl/level20.txt`: SCOWL 20단계, 흔한 단어 약 7천 개 (가중치 0.7)
-  - 공백이나 줄바꿈으로 구분하고 `#` 줄은 주석. 파일에 단어를 추가하면 다음 빌드부터 반영됨
+- **영어 단어는 사전 파일에서만 가져옴**: 실행할 때 `/usr/share/dict/words`(맥은 웹스터 사전 약 23만 개)를 읽음
+  - 모든 단어를 소문자로 바꿔서 씀 (`Paris` → `paris`). 영어 글자로만 된 2~10글자 단어, 거르는 단어 없음
+  - 다른 파일은 `--dict <경로>` (한 줄에 한 단어). 파일이 없으면 오류로 알려줌
+  - 사전에 빈도 정보가 없어서 흔한 단어와 희귀어가 같은 비율로 나옴
 - **진짜 단어 우선**: 집중 키가 든 진짜 단어가 15개 이상이면 진짜 단어만 씀
   - 그보다 적으면 진짜 단어를 한 줄에 각 2번까지 먼저 쓰고, 남는 자리만 가짜 단어로 채움
-  - 영어는 내장 단어가 모자라면 먼저 **보조 사전**에서 채움 (아래)
   - 가짜 단어는 영어 글자 연결 빈도로 만듦 (예: `flads`, `kalds`). 집중 키가 든 진짜 단어가 아예 없을 때 주로 나옴
-- **보조 사전 (영어)**: 맥과 대부분의 리눅스에 있는 `/usr/share/dict/words`(맥은 웹스터 사전 약 23만 개)를 실행할 때 읽음
-  - 모든 단어를 소문자로 바꿔서 씀 (`Paris` → `paris`). 영어 글자로만 된 2글자 이상 단어, 거르는 단어 없음
-  - 집중 키가 든 내장 단어가 15개 미만일 때만 씀. 언락 순서 계산에는 안 씀
-  - 파일이 없으면 그냥 넘어감. `--dict <경로>`로 다른 파일(한 줄에 한 단어), `--dict none`으로 끄기
 - **틀린 단어 복습**: 한 줄을 끝낼 때 틀린 키가 있었던 단어를 기억해 두었다가 다음 줄들에 다시 넣음
-  - 단어 목록에 있는 진짜 단어만 기억함 (가짜 단어는 안 넣음)
+  - 사전에 있는 진짜 단어만 기억함 (가짜 단어는 안 넣음)
   - **지금 집중 키가 들어간 단어일 때만** 다시 나옴. 집중 키가 바뀌면 그 키가 든 틀린 단어만 나옴
   - 다시 나왔을 때 한 번에 맞게 치면 목록에서 빠짐. 최대 100개까지, 진도 파일에 같이 저장
 - **모든 단어에 집중 키가 들어감** (진짜 단어는 집중 키가 든 것만 고르고, 가짜 단어에도 항상 넣음)
@@ -131,18 +125,13 @@ src/
     ├── mod.rs           단어 목록, 열린 키로 거르기
     ├── generator.rs     영어 가짜 단어 생성기
     ├── korean.rs        한글 가짜 단어(음절) 생성기
-    └── line.rs          한 줄 만들기
+    ├── line.rs          한 줄 만들기
+    └── testdata/en.txt  테스트 전용 영어 단어 (실행에는 안 씀)
 ```
 
 ```sh
 cargo test
 ```
-
-## 단어 목록 출처
-
-영어 단어 일부는 [SCOWL](http://wordlist.aspell.net/) (Spell Checker Oriented Word Lists, Kevin Atkinson)
-2020.12.07 판의 10·20단계에서 가져왔습니다. 저작권 표시와 사용 조건은 `assets/words/scowl/COPYRIGHT.txt`에 있습니다.
-`scripts/import_scowl.py`로 다시 만들 수 있고, 이때 영어 소문자 단어만 남기고 부적절한 단어는 뺍니다.
 
 ## 한글 (`--lang ko`)
 

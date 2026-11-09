@@ -11,20 +11,15 @@ use generator::Bigram;
 
 use crate::hangul;
 
-/// 자주 쓰는 기본 단어 (가중치 높음).
-const COMMON: &str = include_str!("../../assets/words/common.txt");
-/// 일반 단어 파일들.
-const OTHERS: [&str; 5] = [
-    include_str!("../../assets/words/early.txt"),
-    include_str!("../../assets/words/extra.txt"),
-    include_str!("../../assets/words/verbs.txt"),
-    include_str!("../../assets/words/nouns.txt"),
-    include_str!("../../assets/words/adjectives.txt"),
-];
+/// 영어 단어는 실행할 때 사전 파일(기본 /usr/share/dict/words)에서 읽습니다.
+/// 맥과 대부분의 리눅스에 있는 영어 단어 목록입니다.
+pub const DEFAULT_DICT: &str = "/usr/share/dict/words";
+/// 사전 단어 중 이보다 긴 단어는 연습에 쓰지 않습니다.
+pub const MAX_EN_WORD_LEN: usize = 10;
 
-/// SCOWL 공개 단어 목록 (scripts/import_scowl.py 로 생성). 10단계가 더 흔한 단어.
-const SCOWL_10: &str = include_str!("../../assets/words/scowl/level10.txt");
-const SCOWL_20: &str = include_str!("../../assets/words/scowl/level20.txt");
+/// 테스트 전용 영어 단어 (실제 실행에는 쓰지 않음).
+#[cfg(test)]
+const TEST_EN: &str = include_str!("testdata/en.txt");
 
 /// 한글: 영화 자막 빈도순 목록 (scripts/import_ko_subtitles.py 로 생성, CC BY-SA 4.0).
 const KO_SUBTITLES: &str = include_str!("../../assets/words/ko/subtitles/top.txt");
@@ -42,9 +37,7 @@ const KO_OTHERS: [&str; 8] = [
 
 /// 단어 묶음별 가중치 (클수록 자주 나옴). 같은 단어는 먼저 나온 묶음의 가중치를 씁니다.
 const COMMON_WEIGHT: f64 = 3.0;
-const SCOWL_10_WEIGHT: f64 = 2.0;
 const OTHER_WEIGHT: f64 = 1.0;
-const SCOWL_20_WEIGHT: f64 = 0.7;
 /// 자막 목록은 한 줄에 15단어. 앞쪽(더 흔한) 줄일수록 가중치가 큼.
 const KO_SUBTITLE_TIERS: [(usize, f64); 3] = [(130, 2.5), (330, 1.2), (usize::MAX, 0.6)];
 
@@ -119,15 +112,7 @@ pub struct WordList {
     pub lang: Lang,
     pub words: Vec<Word>,
     pub bigram: Bigram,
-    /// 보조 사전 단어 (예: 맥의 /usr/share/dict/words). 내장 단어가 모자랄 때만 쓰고,
-    /// 언락 순서 계산에는 쓰지 않습니다.
-    pub extra: Vec<Word>,
 }
-
-/// 보조 사전 단어의 가중치 (내장 단어보다 낮게).
-const EXTRA_WEIGHT: f64 = 0.3;
-/// 맥과 대부분의 리눅스에 있는 영어 단어 목록.
-pub const DEFAULT_DICT: &str = "/usr/share/dict/words";
 
 /// 키 하나의 비트. 소문자 a~z는 0~25, 대문자(Shift) A~Z는 26~51.
 pub fn key_bit(ch: char) -> Option<u64> {
@@ -164,18 +149,19 @@ fn split_lines(text: &str, n: usize) -> (&str, &str) {
 }
 
 impl WordList {
-    pub fn for_lang(lang: Lang) -> Self {
-        match lang {
-            Lang::En => Self::english(),
-            Lang::Ko => Self::korean(),
-        }
+    /// 사전 파일 내용으로 영어 단어 목록을 만듭니다 (한 줄에 한 단어).
+    /// 모두 소문자로 바꾸고, 영어 글자로만 된 2~MAX_EN_WORD_LEN글자 단어를 씁니다.
+    pub fn english_from(dict: &str) -> Self {
+        let mut l = Self::from_sources(Lang::En, &[(dict, 1.0)]);
+        l.words.retain(|w| w.keys.len() <= MAX_EN_WORD_LEN);
+        l.bigram = Bigram::from_words(&l.words);
+        l
     }
 
+    /// 테스트용 영어 단어 목록.
+    #[cfg(test)]
     pub fn english() -> Self {
-        let mut sources = vec![(COMMON, COMMON_WEIGHT), (SCOWL_10, SCOWL_10_WEIGHT)];
-        sources.extend(OTHERS.iter().map(|&t| (t, OTHER_WEIGHT)));
-        sources.push((SCOWL_20, SCOWL_20_WEIGHT));
-        Self::from_sources(Lang::En, &sources)
+        Self::english_from(TEST_EN)
     }
 
     pub fn korean() -> Self {
@@ -223,43 +209,7 @@ impl WordList {
             Lang::En => Bigram::from_words(&words),
             Lang::Ko => Bigram::from_words(&[]),
         };
-        WordList {
-            lang,
-            words,
-            bigram,
-            extra: Vec::new(),
-        }
-    }
-
-    /// 보조 사전을 더합니다 (한 줄에 한 단어). 모두 소문자로 바꾸고, 영어 글자로만 된
-    /// 2글자 이상 단어 중 내장 목록에 없는 것만 씁니다. 더한 단어 수를 돌려줍니다.
-    pub fn add_extra(&mut self, text: &str) -> usize {
-        let mut seen: std::collections::HashSet<String> = self
-            .words
-            .iter()
-            .chain(&self.extra)
-            .map(|w| w.text.clone())
-            .collect();
-        let before = self.extra.len();
-        for line in text.lines() {
-            let Some(keys) = self.lang.keys_of(line.trim()) else {
-                continue;
-            };
-            if seen.insert(keys.clone()) {
-                self.extra.push(Word {
-                    mask: mask_of(keys.chars()),
-                    text: keys.clone(),
-                    keys,
-                    weight: EXTRA_WEIGHT,
-                });
-            }
-        }
-        self.extra.len() - before
-    }
-
-    /// 보조 사전에서 열린 키로만 칠 수 있는 단어.
-    pub fn available_extra(&self, unlocked: u64) -> Vec<&Word> {
-        self.extra.iter().filter(|w| w.mask & !unlocked == 0).collect()
+        WordList { lang, words, bigram }
     }
 
     /// 열린 키(`unlocked` 마스크)로만 칠 수 있는 단어.
@@ -299,21 +249,12 @@ mod tests {
     }
 
     #[test]
-    fn builtin_list_is_reasonable() {
-        let l = WordList::english();
-        assert!(l.words.len() > 10_000, "단어 수: {}", l.words.len());
-    }
-
-    #[test]
-    fn extra_dictionary_is_lowercased_and_deduped() {
-        let mut l = WordList::english();
-        let n = l.add_extra("Paris\nthe\nJak\njak\nfoo-bar\nx\n  Dajl  \n");
-        // the는 내장 목록에 있음, foo-bar와 x는 못 씀, Jak/jak는 하나로.
-        assert_eq!(n, 3);
-        let texts: Vec<_> = l.extra.iter().map(|w| w.text.as_str()).collect();
+    fn dictionary_is_lowercased_deduped_and_length_limited() {
+        let l = WordList::english_from("Paris\nparis\nJak\nfoo-bar\nx\n  Dajl  \nabcdefghijk\n");
+        let texts: Vec<_> = l.words.iter().map(|w| w.text.as_str()).collect();
+        // foo-bar(기호), x(1글자), abcdefghijk(11글자)는 못 씀. Paris/paris는 하나로.
         assert_eq!(texts, ["paris", "jak", "dajl"]);
-        // 보조 사전은 기본 목록(언락 순서 계산용)에 섞이지 않음.
-        assert!(l.words.iter().all(|w| w.text != "jak"));
+        assert!(l.words.iter().all(|w| w.weight == 1.0));
     }
 
     #[test]
