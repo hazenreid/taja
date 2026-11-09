@@ -119,7 +119,15 @@ pub struct WordList {
     pub lang: Lang,
     pub words: Vec<Word>,
     pub bigram: Bigram,
+    /// 보조 사전 단어 (예: 맥의 /usr/share/dict/words). 내장 단어가 모자랄 때만 쓰고,
+    /// 언락 순서 계산에는 쓰지 않습니다.
+    pub extra: Vec<Word>,
 }
+
+/// 보조 사전 단어의 가중치 (내장 단어보다 낮게).
+const EXTRA_WEIGHT: f64 = 0.3;
+/// 맥과 대부분의 리눅스에 있는 영어 단어 목록.
+pub const DEFAULT_DICT: &str = "/usr/share/dict/words";
 
 /// 키 하나의 비트. 소문자 a~z는 0~25, 대문자(Shift) A~Z는 26~51.
 pub fn key_bit(ch: char) -> Option<u64> {
@@ -215,7 +223,43 @@ impl WordList {
             Lang::En => Bigram::from_words(&words),
             Lang::Ko => Bigram::from_words(&[]),
         };
-        WordList { lang, words, bigram }
+        WordList {
+            lang,
+            words,
+            bigram,
+            extra: Vec::new(),
+        }
+    }
+
+    /// 보조 사전을 더합니다 (한 줄에 한 단어). 모두 소문자로 바꾸고, 영어 글자로만 된
+    /// 2글자 이상 단어 중 내장 목록에 없는 것만 씁니다. 더한 단어 수를 돌려줍니다.
+    pub fn add_extra(&mut self, text: &str) -> usize {
+        let mut seen: std::collections::HashSet<String> = self
+            .words
+            .iter()
+            .chain(&self.extra)
+            .map(|w| w.text.clone())
+            .collect();
+        let before = self.extra.len();
+        for line in text.lines() {
+            let Some(keys) = self.lang.keys_of(line.trim()) else {
+                continue;
+            };
+            if seen.insert(keys.clone()) {
+                self.extra.push(Word {
+                    mask: mask_of(keys.chars()),
+                    text: keys.clone(),
+                    keys,
+                    weight: EXTRA_WEIGHT,
+                });
+            }
+        }
+        self.extra.len() - before
+    }
+
+    /// 보조 사전에서 열린 키로만 칠 수 있는 단어.
+    pub fn available_extra(&self, unlocked: u64) -> Vec<&Word> {
+        self.extra.iter().filter(|w| w.mask & !unlocked == 0).collect()
     }
 
     /// 열린 키(`unlocked` 마스크)로만 칠 수 있는 단어.
@@ -258,6 +302,18 @@ mod tests {
     fn builtin_list_is_reasonable() {
         let l = WordList::english();
         assert!(l.words.len() > 10_000, "단어 수: {}", l.words.len());
+    }
+
+    #[test]
+    fn extra_dictionary_is_lowercased_and_deduped() {
+        let mut l = WordList::english();
+        let n = l.add_extra("Paris\nthe\nJak\njak\nfoo-bar\nx\n  Dajl  \n");
+        // the는 내장 목록에 있음, foo-bar와 x는 못 씀, Jak/jak는 하나로.
+        assert_eq!(n, 3);
+        let texts: Vec<_> = l.extra.iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(texts, ["paris", "jak", "dajl"]);
+        // 보조 사전은 기본 목록(언락 순서 계산용)에 섞이지 않음.
+        assert!(l.words.iter().all(|w| w.text != "jak"));
     }
 
     #[test]

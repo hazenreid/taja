@@ -59,6 +59,11 @@ struct Args {
     /// Print the layouts and progress folders and exit
     #[arg(long)]
     paths: bool,
+
+    /// Extra word list used when built-in English words with the focus key run short
+    /// (one word per line; default /usr/share/dict/words if it exists; "none" to turn off)
+    #[arg(long)]
+    dict: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -97,7 +102,20 @@ fn run_app(args: Args) -> Result<(), String> {
         LangArg::En => Lang::En,
         LangArg::Ko => Lang::Ko,
     };
-    let words = WordList::for_lang(lang);
+    let mut words = WordList::for_lang(lang);
+    if lang == Lang::En {
+        let path = args.dict.as_deref().unwrap_or(words::DEFAULT_DICT);
+        if path != "none" {
+            match std::fs::read_to_string(path) {
+                Ok(text) => {
+                    words.add_extra(&text);
+                }
+                // 기본 경로가 없으면 조용히 넘어가고, 직접 지정한 파일이 없으면 알려줍니다.
+                Err(_) if args.dict.is_none() => {}
+                Err(e) => return Err(format!("cannot read dictionary ({path}): {e}")),
+            }
+        }
+    }
     // 진도는 레이아웃과 언어마다 따로.
     let save_path = match lang {
         Lang::En => paths.profile_file(&layout.name),
