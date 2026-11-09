@@ -153,16 +153,26 @@ impl Profile {
         }
     }
 
-    /// 열린 키 중 가장 약한 키. 동점이면 나중에 열린 키.
-    pub fn focus(&self, t: Targets) -> Option<char> {
+    /// 집중 키: 열린 키 중 가장 연습이 필요한 키.
+    /// 1. 아직 MIN_SAMPLES번을 못 친 키 (새로 열린 키는 기록이 없어서 먼저)
+    /// 2. 정확도가 가장 낮은 키
+    /// 3. 정확도가 같으면 속도가 느린 키, 그것도 같으면 나중에 열린 키
+    pub fn focus(&self) -> Option<char> {
+        let rank = |s: &KeyStats| {
+            (
+                s.count() >= MIN_SAMPLES,
+                s.accuracy().unwrap_or(0.0),
+                s.wpm().unwrap_or(0.0),
+            )
+        };
         self.unlocked_keys()
             .iter()
             .enumerate()
             .rev()
             .min_by(|a, b| {
-                self.stats[a.0]
-                    .progress(t)
-                    .total_cmp(&self.stats[b.0].progress(t))
+                let (ea, aa, wa) = rank(&self.stats[a.0]);
+                let (eb, ab, wb) = rank(&self.stats[b.0]);
+                ea.cmp(&eb).then(aa.total_cmp(&ab)).then(wa.total_cmp(&wb))
             })
             .map(|(_, &c)| c)
     }
@@ -269,12 +279,12 @@ mod tests {
         }
         assert_eq!(p.try_unlock(T), None);
         // 아직 안 친 마지막 키가 집중 키.
-        assert_eq!(p.focus(T), keys.last().copied());
+        assert_eq!(p.focus(), keys.last().copied());
         for _ in 0..MIN_SAMPLES {
             p.record(*keys.last().unwrap(), fast());
         }
         assert_eq!(p.try_unlock(T), Some('e'));
-        assert_eq!(p.focus(T), Some('e'));
+        assert_eq!(p.focus(), Some('e'));
     }
 
     #[test]
@@ -296,7 +306,7 @@ mod tests {
             ); // 12 WPM
         }
         assert_eq!(p.try_unlock(T), None);
-        assert_eq!(p.focus(T), Some('d'));
+        assert_eq!(p.focus(), Some('d'));
     }
 
     #[test]
@@ -337,5 +347,41 @@ mod tests {
         json.as_object_mut().unwrap().remove("missed");
         let p: Profile = serde_json::from_value(json).unwrap();
         assert!(p.missed.is_empty());
+    }
+
+    #[test]
+    fn focus_prefers_lowest_accuracy() {
+        let mut p = profile();
+        let keys: Vec<char> = p.unlocked_keys().to_vec();
+        for &k in &keys {
+            for _ in 0..MIN_SAMPLES {
+                p.record(k, fast());
+            }
+        }
+        // 'd'는 느리지만 정확, 's'는 빠르지만 자주 틀림 → 's'가 집중 키.
+        for _ in 0..WINDOW {
+            p.record(
+                'd',
+                Sample {
+                    ms: Some(1000),
+                    clean: true,
+                },
+            );
+        }
+        for i in 0..WINDOW {
+            p.record(
+                's',
+                Sample {
+                    ms: Some(150),
+                    clean: i % 5 != 0,
+                },
+            );
+        }
+        assert_eq!(p.focus(), Some('s'));
+        // 정확도가 같으면 느린 키.
+        for _ in 0..WINDOW {
+            p.record('s', fast());
+        }
+        assert_eq!(p.focus(), Some('d'));
     }
 }
