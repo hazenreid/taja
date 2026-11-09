@@ -1,6 +1,9 @@
 //! 연습할 한 줄 만들기: 진짜 단어와 가짜 단어를 섞고, 모든 단어에 집중 키를 넣습니다.
 
+use std::collections::HashMap;
+
 use rand::Rng;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use super::generator::pick_weighted;
@@ -8,8 +11,10 @@ use super::{Lang, WordList, display_width, key_bit, korean, mask_of};
 
 /// 틀렸던 단어를 다시 넣을 확률 (단어 자리마다).
 const REVIEW_RATE: f64 = 0.35;
-/// 진짜 단어가 이만큼 있으면 거의 진짜 단어만 씁니다.
-const ENOUGH_REAL_WORDS: f64 = 60.0;
+/// 집중 키가 든 진짜 단어가 이만큼 있으면 진짜 단어만 씁니다.
+const ENOUGH_REAL_WORDS: usize = 15;
+/// 한 줄에 같은 단어는 이만큼까지만 (진짜 단어가 적을 때 같은 단어만 반복되지 않게).
+const MAX_REPEAT: usize = 2;
 
 /// 한 줄의 단어 하나.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,13 +72,17 @@ pub fn build_line(
         .into_iter()
         .filter(|w| focus.is_none_or(|f| w.uses(f)))
         .collect();
-    let real_ratio = if real.is_empty() {
-        0.0
-    } else {
-        (real.len() as f64 / ENOUGH_REAL_WORDS).clamp(0.15, 0.95)
-    };
-    let pick_real = |rng: &mut _| {
-        let options: Vec<(usize, f64)> = real.iter().enumerate().map(|(i, w)| (i, w.weight)).collect();
+    // 진짜 단어를 먼저 쓰고, 다 쓰면(같은 단어 MAX_REPEAT번) 가짜 단어로 채웁니다.
+    // 집중 키가 든 진짜 단어가 ENOUGH_REAL_WORDS개 이상이면 사실상 진짜 단어만 나옵니다.
+    let enough = real.len() >= ENOUGH_REAL_WORDS;
+    let mut used: HashMap<String, usize> = HashMap::new();
+    let pick_real = |rng: &mut _, used: &HashMap<String, usize>| {
+        let options: Vec<(usize, f64)> = real
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| used.get(&w.text).copied().unwrap_or(0) < MAX_REPEAT)
+            .map(|(i, w)| (i, w.weight))
+            .collect();
         pick_weighted(rng, &options).map(|i| Item {
             text: real[i].text.clone(),
             keys: real[i].keys.clone(),
@@ -96,15 +105,9 @@ pub fn build_line(
         } else {
             None
         };
-        let real_word = if rng.random_bool(real_ratio) {
-            pick_real(rng)
-        } else {
-            None
-        };
         let Some(item) = again
-            .or(real_word)
+            .or_else(|| pick_real(rng, &used))
             .or_else(|| pseudo(rng, list, &keys, focus))
-            .or_else(|| pick_real(rng))
         else {
             continue;
         };
@@ -118,7 +121,17 @@ pub fn build_line(
             break;
         }
         width += extra + w;
+        *used.entry(item.text.clone()).or_insert(0) += 1;
         items.push(item);
+    }
+    // 진짜 단어가 적어서 앞쪽에 몰렸으면 가짜 단어와 섞습니다 (같은 단어가 붙지 않게).
+    if !enough {
+        for _ in 0..10 {
+            items.shuffle(rng);
+            if items.windows(2).all(|p| p[0] != p[1]) {
+                break;
+            }
+        }
     }
     items
 }
@@ -211,5 +224,44 @@ mod tests {
         }
         assert!(tide > 50, "tide {tide}");
         assert_eq!((side, tick), (0, 0));
+    }
+
+    #[test]
+    fn only_real_words_when_enough() {
+        let list = WordList::english();
+        let mut rng = StdRng::seed_from_u64(10);
+        let keys = chars("fjdkslaeit");
+        for f in ['t', 'e', 'a'] {
+            for _ in 0..100 {
+                for item in build_line(&mut rng, &list, &keys, Some(f), &[], 50) {
+                    assert!(item.real, "가짜 단어: {item:?} (focus {f})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn few_real_words_are_used_up_to_twice_then_pseudo() {
+        let list = WordList::english();
+        let mut rng = StdRng::seed_from_u64(11);
+        let keys = chars("fjdksla");
+        let real_with_j = list
+            .available(mask_of(keys.iter().copied()))
+            .into_iter()
+            .filter(|w| w.uses('j'))
+            .count();
+        assert!(real_with_j < ENOUGH_REAL_WORDS, "{real_with_j}");
+        for _ in 0..100 {
+            let items = build_line(&mut rng, &list, &keys, Some('j'), &[], 50);
+            let mut count: HashMap<&str, usize> = HashMap::new();
+            for item in items.iter().filter(|i| i.real) {
+                *count.entry(item.text.as_str()).or_insert(0) += 1;
+            }
+            assert!(count.values().all(|&n| n <= MAX_REPEAT), "{count:?}");
+            // 진짜 단어를 다 써야 가짜 단어가 나옴.
+            if items.iter().any(|i| !i.real) && real_with_j > 0 {
+                assert_eq!(count.len(), real_with_j, "{items:?}");
+            }
+        }
     }
 }
