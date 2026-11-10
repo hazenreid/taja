@@ -13,6 +13,8 @@ pub struct Paths {
     pub layouts: Option<PathBuf>,
     /// 레이아웃별 진도 파일이 저장되는 곳.
     pub profiles: PathBuf,
+    /// 영어 언락 순서 계산에 쓰는 corpus.bin 기본 위치.
+    pub corpus: Option<PathBuf>,
 }
 
 impl Paths {
@@ -21,10 +23,12 @@ impl Paths {
             Some(d) => Paths {
                 layouts: Some(d.config_dir().join("layouts")),
                 profiles: d.data_dir().join("profiles"),
+                corpus: Some(d.config_dir().join("corpus.bin")),
             },
             None => Paths {
                 layouts: None,
                 profiles: PathBuf::from(".taja"),
+                corpus: None,
             },
         }
     }
@@ -89,6 +93,7 @@ mod tests {
         let p = Paths {
             layouts: None,
             profiles: PathBuf::from("x"),
+            corpus: None,
         };
         assert_eq!(
             p.profile_file("my/../lay out"),

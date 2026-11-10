@@ -30,6 +30,7 @@ cargo run --release -- --help           # 옵션 보기
 - `--reset`: 이 레이아웃의 진도를 지우고 처음부터
 - `--paths`: 레이아웃 폴더와 진도 폴더 위치 보기
 - `--dict <경로>`: 영어 단어를 가져올 사전 파일 (기본 `/usr/share/dict/words`)
+- `--corpus <경로>`: 영어 언락 순서에 쓸 `corpus.bin` (기본: 설정 폴더의 `corpus.bin`, `--paths`로 위치 확인)
 
 ## 레이아웃 파일
 
@@ -57,7 +58,7 @@ kvgd..hcuw
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과 (맥 웹스터 사전 기준): 시작 키 `r o e t` (4개) → `n i a s l c d m u h p g b y f v k w x z j q`
+이 배열의 계산 결과 (corpus.bin 없이 맥 웹스터 사전 기준): 시작 키 `r o e t` (4개) → `n i a s l d c m u h p g b y f v k w x z q j`
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -68,9 +69,29 @@ cargo run --release -- --layout layouts/mine.txt
   8개로도 부족하고 모음이 없으면 가장 쉬운 자리의 모음을 하나 추가
   - QWERTY: `f j d k s l`에는 모음이 없어서 `a`까지 7개 (`fjdksla`)
   - 홈열이 `arstdhneio`인 레이아웃: `t n s e` 4개로 충분
-- **언락 순서**: "이 키를 열면 새로 칠 수 있게 되는 단어의 양 ÷ 그 자리의 치기 어려운 정도"가 가장 큰 키부터
-  - QWERTY 결과 (맥 웹스터 사전 기준): `fjdksla` → `e i r t o c n u m h g p y b v w x z q`
-  - 시작 키와 언락 순서는 사전 파일로 계산하므로, 다른 사전을 쓰면 달라질 수 있음
+- **언락 순서 (트라이그램)**: 남은 키마다 "이 키를 열면 이미 열린 키(와 공백)와 함께 새로 칠 수 있게 되는
+  트라이그램(세 글자 연속)의 빈도 합"을 구하고, 글자 빈도를 조금 더한 뒤 자리 비용으로 나눠 가장 큰 키부터 엶
+  - **롤**(세 글자가 같은 손, 서로 다른 손가락, 한 방향으로 이어짐)인 트라이그램은 1.5배로 쳐줌.
+    롤링 레이아웃이면 자주 쓰는 롤 동작이 일찍 열림
+  - 영어: `corpus.bin`의 트라이그램 빈도. 파일이 없으면 사전 단어로 센 값으로 대신함 (빈도 정보가 없어 덜 정확)
+  - 한글: 내장 단어 목록의 빈도로 두벌식 키 트라이그램을 셈
+  - 언락 순서는 진도를 처음 만들 때 계산함. `corpus.bin`을 바꾼 뒤에는 `--reset`으로 새로 시작해야 반영됨
+  - 결과 예 (corpus.bin 없이 맥 웹스터 사전 기준):
+    - QWERTY: `fjdksla` → `e i r t o n c u m h g p y b v w x z q`
+    - `layouts/mine.txt`: `r o e t` → `n i a s l d c m u h p g b y f v k w x z q j`
+
+### corpus.bin 형식
+
+`CorpusStats { letters, bigrams, trigrams }`를 bincode 1 기본 설정(리틀엔디언, 고정 길이 정수)으로 직렬화한 파일.
+헤더 없이 맵 세 개가 차례로 들어 있습니다. 글자는 UTF-8, 횟수는 u64입니다.
+
+```
+[u64 개수] + (char, u64) × 개수               ← letters
+[u64 개수] + (char, char, u64) × 개수         ← bigrams (지금은 안 씀)
+[u64 개수] + (char, char, char, u64) × 개수   ← trigrams
+```
+
+영어 글자는 소문자로 바꾸고, 영어 글자와 공백이 아닌 글자가 든 항목은 버립니다.
 
 진도는 레이아웃마다 따로 저장됩니다 (Linux: `~/.local/share/taja/profiles/<이름>.json`).
 레이아웃 파일 내용이 바뀌면 진도를 새로 시작합니다.
@@ -114,13 +135,14 @@ src/
 ├── lesson.rs            한 줄 입력 처리, 오타 멈춤, 키 간격 측정
 ├── progress.rs          키별 통계, 언락 판정, 집중 키, 진도 데이터
 ├── storage.rs           파일 위치, 진도 저장/불러오기
+├── corpus.rs            corpus.bin 읽기, 글자/트라이그램 빈도
 ├── ui.rs                화면 그리기
 ├── hangul.rs            한글 음절 ↔ 두벌식 키, 조합 중인 글자
 ├── target.rs            한 줄의 키 순서와 화면 글자 단위
 ├── layout/
 │   ├── mod.rs           레이아웃 파일 읽기/검사
 │   ├── cost.rs          손가락 배정, 자리별 비용표
-│   └── plan.rs          시작 키, 언락 순서 계산
+│   └── plan.rs          시작 키, 언락 순서 계산 (트라이그램, 롤 판정)
 └── words/
     ├── mod.rs           단어 목록, 열린 키로 거르기
     ├── generator.rs     영어 가짜 단어 생성기

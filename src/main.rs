@@ -1,4 +1,5 @@
 mod app;
+mod corpus;
 mod hangul;
 mod layout;
 mod lesson;
@@ -17,8 +18,9 @@ use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
 use app::App;
+use corpus::Ngrams;
 use layout::Layout;
-use layout::plan::make_plan;
+use layout::plan::{Plan, make_plan_with};
 use progress::{Profile, Targets};
 use storage::{Paths, load_profile};
 use words::{Lang, WordList};
@@ -63,6 +65,11 @@ struct Args {
     /// English word list to practice from (one word per line)
     #[arg(long, default_value = words::DEFAULT_DICT)]
     dict: String,
+
+    /// Letter/trigram stats (corpus.bin) used to order English key unlocks
+    /// [default: corpus.bin in the config folder, if it exists]
+    #[arg(long)]
+    corpus: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -83,6 +90,9 @@ fn run_app(args: Args) -> Result<(), String> {
             None => println!("Layouts folder:  (not found; pass a file path instead)"),
         }
         println!("Progress folder: {}", paths.profiles.display());
+        if let Some(c) = &paths.corpus {
+            println!("Corpus file:     {}", c.display());
+        }
         return Ok(());
     }
     if !(1.0..=300.0).contains(&args.target_wpm) {
@@ -124,10 +134,39 @@ fn run_app(args: Args) -> Result<(), String> {
         Lang::Ko => paths.profile_file(&format!("{}-ko", layout.name)),
     };
 
+    // 언락 순서는 새 진도를 만들 때만 계산합니다.
+    // 영어: corpus.bin의 트라이그램 (없으면 사전 단어로 셈), 한글: 내장 단어 빈도.
+    let new_plan = || -> Result<(Plan, Option<String>), String> {
+        let (ngrams, note) = match lang {
+            Lang::Ko => (Ngrams::from_words(&words), None),
+            Lang::En => {
+                let path = match (&args.corpus, &paths.corpus) {
+                    (Some(p), _) => Some(std::path::PathBuf::from(p)),
+                    (None, Some(p)) if p.is_file() => Some(p.clone()),
+                    _ => None,
+                };
+                match path {
+                    Some(p) => {
+                        let bytes = std::fs::read(&p)
+                            .map_err(|e| format!("cannot read corpus ({}): {e}", p.display()))?;
+                        let n = Ngrams::parse_corpus(&bytes)
+                            .map_err(|e| format!("invalid corpus ({}): {e}", p.display()))?;
+                        (n, None)
+                    }
+                    None => (
+                        Ngrams::from_words(&words),
+                        Some("no corpus.bin, unlock order from dictionary".to_string()),
+                    ),
+                }
+            }
+        };
+        Ok((make_plan_with(&layout, &words, &ngrams), note))
+    };
+
     let (profile, message) = match (args.reset, load_profile(&save_path)) {
         (false, Ok(Some(p))) if p.is_valid_for(&layout) => (p, None),
         (false, Ok(Some(_))) => (
-            Profile::new(&layout, &make_plan(&layout, &words)),
+            Profile::new(&layout, &new_plan()?.0),
             Some("Layout changed, starting progress over".to_string()),
         ),
         (false, Err(e)) => {
@@ -137,9 +176,13 @@ fn run_app(args: Args) -> Result<(), String> {
             ));
         }
         _ => {
-            let p = Profile::new(&layout, &make_plan(&layout, &words));
+            let (plan, note) = new_plan()?;
+            let p = Profile::new(&layout, &plan);
             let keys: Vec<String> = p.unlocked_keys().iter().map(|&k| lang.key_label(k)).collect();
-            let msg = format!("Start keys: {}", keys.join(" "));
+            let mut msg = format!("Start keys: {}", keys.join(" "));
+            if let Some(n) = note {
+                msg = format!("{msg} ({n})");
+            }
             (p, Some(msg))
         }
     };
