@@ -126,7 +126,9 @@ pub fn is_roll(layout: &Layout, tri: [char; 3]) -> bool {
 /// 시작 키와 나머지 순서를 트라이그램 빈도로 정합니다.
 ///
 /// 후보 키마다 "이 키를 열면 이미 열린 키(와 공백)와 함께 새로 칠 수 있게 되는 트라이그램의
-/// 빈도 합"을 구하고(롤이면 ROLL_BONUS배), 글자 빈도를 조금 더한 뒤 자리 비용으로 나눕니다.
+/// 빈도 합"을 구하고(롤이면 ROLL_BONUS배), 글자 빈도를 조금 더한 값이 큰 키부터 엽니다.
+/// 자리 비용은 따지지 않습니다 (빈도로 최적화한 레이아웃이면 흔한 글자가 이미 편한 자리에 있음).
+/// 점수가 같을 때만 쉬운 자리가 먼저입니다.
 pub fn make_plan_with(layout: &Layout, words: &WordList, ngrams: &Ngrams) -> Plan {
     let cost_of = |ch: char| key_cost(layout, ch).expect("key must be in the layout");
     // 레이아웃의 글자 키 + 이 언어에서 쓰는 Shift 키.
@@ -169,7 +171,7 @@ pub fn make_plan_with(layout: &Layout, words: &WordList, ngrams: &Ngrams) -> Pla
                 .map(|t| t.1)
                 .sum();
             let f = ngrams.letters.get(&ch).copied().unwrap_or(0.0) / total_letters;
-            let score = (gain / total_tri + FREQ_SHARE * f) / cost_of(ch);
+            let score = gain / total_tri + FREQ_SHARE * f;
             // remaining은 비용순이라, 동점이면 쉬운 자리가 먼저 뽑힙니다.
             if best.is_none_or(|(_, s)| score > s) {
                 best = Some((i, score));
