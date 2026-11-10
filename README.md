@@ -58,17 +58,18 @@ kvgd..hcuw
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `r o e t` (4개) → `n i s a h d c l f m g u p b w v y k j x q z`
+이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `t i n o` (4개) → `e r s a h d c l f m g u p b w v y k j x q z`
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
 
 - **손가락**: 열 번호로 정함 (0 왼손 새끼 … 3·4 왼손 검지 | 5·6 오른손 검지 … 9 오른손 새끼)
-- **시작 키 (4~8개 자동)**: 홈열에서 검지 → 중지 → 약지 → 새끼 순으로 하나씩 늘리면서,
-  그 키들로 칠 수 있는 진짜 단어가 10개 이상 되는 **가장 적은 개수**에서 멈춤.
+- **시작 키 (4~8개 자동, 빈도 기준)**: 홈열 8칸(안쪽 두 칸 제외)의 키 중에서, 그 키들(과 공백)로 칠 수 있는
+  트라이그램 빈도가 **가장 높은 조합**을 고름. 4개부터 늘려 가며, 사전 단어가 10개 이상 나오는 조합이 있는
+  가장 적은 개수에서 멈춤. 손가락 위치는 따지지 않음 (빈도로 최적화한 레이아웃이면 흔한 글자가 이미 편한 자리에 있음).
   8개로도 부족하고 모음이 없으면 가장 쉬운 자리의 모음을 하나 추가
-  - QWERTY: `f j d k s l`에는 모음이 없어서 `a`까지 7개 (`fjdksla`)
-  - 홈열이 `arstdhneio`인 레이아웃: `t n s e` 4개로 충분
+  - QWERTY: `a s l d` (4개)
+  - `layouts/mine.txt`: `t i n o` (4개)
 - **언락 순서 (트라이그램)**: 남은 키마다 "이 키를 열면 이미 열린 키(와 공백)와 함께 새로 칠 수 있게 되는
   트라이그램(세 글자 연속)의 빈도 합"을 구하고, 글자 빈도를 조금 더한 뒤 자리 비용으로 나눠 가장 큰 키부터 엶
   - **롤**(세 글자가 같은 손, 서로 다른 손가락, 한 방향으로 이어짐)인 트라이그램은 1.5배로 쳐줌.
@@ -77,8 +78,8 @@ cargo run --release -- --layout layouts/mine.txt
   - 한글: 내장 단어 목록의 빈도로 두벌식 키 트라이그램을 셈
   - 언락 순서는 진도를 처음 만들 때 계산함. `corpus.bin`을 바꾼 뒤에는 `--reset`으로 새로 시작해야 반영됨
   - 결과 예 (시작 키는 맥 웹스터 사전, 순서는 저장소의 `assets/corpus.bin` 기준):
-    - QWERTY: `fjdksla` → `e r i t h o n c m u g w p v b y x q z`
-    - `layouts/mine.txt`: `r o e t` → `n i s a h d c l f m g u p b w v y k j x q z`
+    - QWERTY: `asld` → `e r i t h n o f c m g u w p v k b y j x q z`
+    - `layouts/mine.txt`: `tino` → `e r s a h d c l f m g u p b w v y k j x q z`
 
 ### corpus.bin 위치
 
@@ -171,7 +172,7 @@ cargo test
 - 단어는 키 순서로 바꿔서 비교합니다 (`학교` → `gkrry`). 목표 줄 아래에 친 키가 조합된 모습(`ㅎ` → `하` → `학`)이 보입니다.
 - 진짜 단어가 모자랄 때만 열린 자모로 만든 음절(홑모음만, 받침은 ㄱ ㄴ ㄹ ㅁ ㅂ ㅅ ㅆ ㅇ만)로 채웁니다.
 - 속도는 분당 타수(KPM, keystrokes per minute)로 표시합니다. 진도는 영어와 따로 저장됩니다 (`<레이아웃>-ko.json`).
-- 계산 결과: QWERTY는 `ㄹ ㅓ ㅇ ㅏ`(f j d k)로 시작, `layouts/mine.txt`는 `ㄱ ㅐ ㄷ ㅅ ㅜ`(r o e t n)로 시작
+- 계산 결과: QWERTY는 `ㅇ ㅏ ㄴ ㅣ`(d k s l)로 시작, `layouts/mine.txt`는 `ㄴ ㄱ ㅅ ㅜ ㅐ`(s r t n o)로 시작
 
 ### 한글 단어 목록
 
