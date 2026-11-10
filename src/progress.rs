@@ -283,8 +283,9 @@ mod tests {
         for _ in 0..MIN_SAMPLES {
             p.record(*keys.last().unwrap(), fast());
         }
-        assert_eq!(p.try_unlock(T), Some('e'));
-        assert_eq!(p.focus(), Some('e'));
+        let next = p.next_locked();
+        assert_eq!(p.try_unlock(T), next);
+        assert_eq!(p.focus(), next);
     }
 
     #[test]

@@ -59,14 +59,6 @@ impl Lang {
         }
     }
 
-    /// 모음 키. 시작 키에 하나도 없으면 진짜 단어가 안 나옵니다.
-    pub fn vowel_keys(self) -> &'static [char] {
-        match self {
-            Lang::En => &['a', 'e', 'i', 'o', 'u'],
-            Lang::Ko => &hangul::VOWEL_KEYS,
-        }
-    }
-
     /// Shift를 눌러야 하는 키 (레이아웃의 소문자 키 + Shift).
     pub fn shift_keys(self) -> &'static [char] {
         match self {

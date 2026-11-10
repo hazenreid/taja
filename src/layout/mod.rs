@@ -12,7 +12,6 @@ use std::path::Path;
 
 pub const ROWS: usize = 3;
 pub const COLS: usize = 10;
-pub const HOME_ROW: usize = 1;
 
 const QWERTY: &str = include_str!("../../assets/layouts/qwerty.txt");
 

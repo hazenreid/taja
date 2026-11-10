@@ -71,11 +71,6 @@ pub fn key_jamo(key: char) -> Option<char> {
 /// Shift를 눌러야 하는 키들.
 pub const SHIFT_KEYS: [char; 7] = ['Q', 'W', 'E', 'R', 'T', 'O', 'P'];
 
-/// 모음 키 (단어를 만들려면 하나는 있어야 함).
-pub const VOWEL_KEYS: [char; 14] = [
-    'y', 'u', 'i', 'o', 'p', 'h', 'j', 'k', 'l', 'b', 'n', 'm', 'O', 'P',
-];
-
 pub fn is_syllable(c: char) -> bool {
     (BASE..=LAST).contains(&(c as u32))
 }

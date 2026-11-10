@@ -234,8 +234,9 @@ mod tests {
     fn typing_lines_unlocks_next_key() {
         let (mut app, dir) = app_for(WordList::english(), "en");
         type_until_unlock(&mut app);
-        assert_eq!(app.profile.unlocked_keys().last(), Some(&'e'));
-        assert!(app.message.as_deref().unwrap().contains("'e'"));
+        let next = app.profile.order[app.profile.unlocked - 1];
+        assert_eq!(app.profile.unlocked_keys().last(), Some(&next));
+        assert!(app.message.as_deref().unwrap().contains(&format!("'{next}'")));
         assert!(app.save_error.is_none(), "{:?}", app.save_error);
         let _ = std::fs::remove_dir_all(dir);
     }

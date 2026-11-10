@@ -1,12 +1,12 @@
 //! 시작 키와 언락 순서를 레이아웃 위치와 단어 목록으로 자동 계산합니다.
 
 use super::cost::{cost, finger};
-use super::{HOME_ROW, Layout, is_letter};
+use super::{Layout, is_letter};
 use crate::corpus::{Ngrams, SPACE};
 use crate::words::{WordList, key_bit, mask_of};
 
-/// 홈열에서 시작 키를 고르는 순서: 검지 → 중지 → 약지 → 새끼 (안쪽 4, 5열 제외).
-const START_COLS: [usize; 8] = [3, 6, 2, 7, 1, 8, 0, 9];
+/// 시작 키를 찾을 때 단계마다 남겨 두는 조합 수.
+const BEAM_WIDTH: usize = 300;
 /// 시작 키 개수 범위.
 pub const MIN_START: usize = 4;
 pub const MAX_START: usize = 8;
@@ -47,65 +47,55 @@ fn weighted_trigrams(layout: &Layout, ngrams: &Ngrams) -> Vec<(u64, f64)> {
         .collect()
 }
 
-/// `items`에서 `k`개를 고르는 모든 조합.
-fn combinations<T: Copy>(items: &[T], k: usize) -> Vec<Vec<T>> {
-    if k == 0 {
-        return vec![Vec::new()];
-    }
-    if items.len() < k {
-        return Vec::new();
-    }
-    let mut out = combinations(&items[1..], k - 1);
-    out.iter_mut().for_each(|c| c.insert(0, items[0]));
-    out.extend(combinations(&items[1..], k));
-    out
-}
-
-/// 시작 키: 홈열(안쪽 두 칸 제외)의 키 중에서, 그 키들(과 공백)로 칠 수 있는 트라이그램 빈도가
-/// 가장 높은 조합을 고릅니다. 4개부터 늘려 가며, 사전 단어가 MIN_START_WORDS개 이상 나오는
-/// 조합이 있는 가장 적은 개수에서 멈춥니다. 8개로도 안 되면 빈도가 가장 높은 8개를 쓰고,
-/// 모음이 하나도 없으면 가장 쉬운 자리의 모음을 하나 더합니다. 순서는 글자 빈도순.
+/// 시작 키: 레이아웃의 모든 글자 키 중에서, 그 키들(과 공백)로 칠 수 있는 트라이그램 빈도가
+/// 가장 높은 조합을 고릅니다 (자리는 따지지 않음). 4개부터 늘려 가며, 사전 단어가
+/// MIN_START_WORDS개 이상 나오는 조합이 있는 가장 적은 개수에서 멈춥니다.
+///
+/// 조합 수가 너무 많아서(26개 중 8개면 150만 가지) 빔 탐색을 씁니다: 키를 하나씩 늘리면서
+/// 단계마다 점수 상위 BEAM_WIDTH개 조합만 남깁니다. 순서는 글자 빈도순.
 pub fn start_keys(layout: &Layout, words: &WordList, ngrams: &Ngrams) -> Vec<char> {
-    let vowels = words.lang.vowel_keys();
-    let home: Vec<char> = START_COLS
-        .iter()
-        .filter_map(|&c| layout.key_at(HOME_ROW, c))
-        .collect();
+    let letters: Vec<char> = layout.iter().map(|p| p.2).filter(|&c| is_letter(c)).collect();
     let tris = weighted_trigrams(layout, ngrams);
-    let coverage = |keys: &[char]| {
-        let m = mask_of(keys.iter().copied());
+    let coverage = |m: u64| {
         tris.iter()
             .filter(|&&(t, _)| t & !m == 0)
             .map(|t| t.1)
             .sum::<f64>()
     };
-    let word_count = |keys: &[char]| words.available(mask_of(keys.iter().copied())).len();
-    let best = |subsets: Vec<Vec<char>>| {
-        subsets
-            .into_iter()
-            .max_by(|a, b| coverage(a).total_cmp(&coverage(b)))
+    let word_count = |m: u64| words.available(m).len();
+    let keys_of = |m: u64| -> Vec<char> {
+        letters
+            .iter()
+            .copied()
+            .filter(|&c| m & key_bit(c).unwrap() != 0)
+            .collect()
     };
 
-    // 홈열에 빈 칸이 있으면 쓸 수 있는 키가 8개보다 적을 수 있습니다.
-    let max = MAX_START.min(home.len());
-    let found = (MIN_START.min(max)..=max).find_map(|n| {
-        let ok: Vec<Vec<char>> = combinations(&home, n)
-            .into_iter()
-            .filter(|c| word_count(c) >= MIN_START_WORDS)
-            .collect();
-        best(ok)
-    });
-    let mut start = found.unwrap_or_else(|| best(combinations(&home, max)).unwrap_or_default());
-
-    if word_count(&start) < MIN_START_WORDS && !start.iter().any(|c| vowels.contains(c)) {
-        let vowel = layout
+    let max = MAX_START.min(letters.len());
+    let mut beam: Vec<(u64, f64)> = vec![(0, 0.0)];
+    let mut chosen: Option<u64> = None;
+    for n in 1..=max {
+        // 지금 조합마다 키 하나씩 더해 보고, 중복을 빼고 점수순으로 상위만 남김.
+        let mut next: Vec<u64> = beam
             .iter()
-            .filter(|p| vowels.contains(&p.2) && !start.contains(&p.2))
-            .min_by(|a, b| cost(a.0, a.1).total_cmp(&cost(b.0, b.1)));
-        if let Some(p) = vowel {
-            start.push(p.2);
+            .flat_map(|&(m, _)| letters.iter().map(move |&c| m | key_bit(c).unwrap()))
+            .filter(|&m| m.count_ones() as usize == n)
+            .collect();
+        next.sort_unstable();
+        next.dedup();
+        let mut scored: Vec<(u64, f64)> = next.into_iter().map(|m| (m, coverage(m))).collect();
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        scored.truncate(BEAM_WIDTH);
+        beam = scored;
+        if n >= MIN_START.min(max)
+            && let Some(&(m, _)) = beam.iter().find(|&&(m, _)| word_count(m) >= MIN_START_WORDS)
+        {
+            chosen = Some(m);
+            break;
         }
     }
+    // MAX_START개로도 단어가 모자라면 빈도가 가장 높은 MAX_START개.
+    let mut start = keys_of(chosen.unwrap_or_else(|| beam.first().map_or(0, |b| b.0)));
     let freq = |c: &char| ngrams.letters.get(c).copied().unwrap_or(0.0);
     start.sort_by(|a, b| freq(b).total_cmp(&freq(a)));
     start
@@ -209,9 +199,8 @@ mod tests {
     fn qwerty_plan() {
         let plan = make_plan(&Layout::qwerty(), &WordList::english());
         let start: String = plan.order[..plan.start_len].iter().collect();
-        // 빈도가 높은 홈열 키 4개로 단어가 충분 (손가락 순서와 무관하게 a, s, d, l).
-        assert_eq!(start, "sadl");
-        assert_eq!(plan.order[plan.start_len], 'e', "{:?}", plan.order);
+        // 자리와 상관없이 빈도가 높은 키 4개 (윗줄 e, t 포함).
+        assert_eq!(start, "estd");
         // ; , . / 는 빈 칸이라 키는 26개.
         assert_eq!(plan.order.len(), 26);
         // 모든 키가 한 번씩.
@@ -228,23 +217,57 @@ mod tests {
         assert_eq!(plan.order.len(), 26);
         let start = &plan.order[..plan.start_len];
         assert!((MIN_START..=MAX_START).contains(&start.len()), "{start:?}");
-        assert!(
-            start.iter().all(|&c| l.position(c).unwrap().0 == HOME_ROW),
-            "{start:?}"
-        );
+        assert!(start.iter().all(|&c| l.position(c).is_some()), "{start:?}");
     }
 
     #[test]
-    fn uses_fewest_keys_that_give_enough_words() {
-        // 홈열 a r s t | n e i o 중 빈도가 가장 높은 4개로 충분.
-        assert_eq!(start_of("qwfpgjluy;\narstdhneio\nzxcvbkm,./"), "estr");
+    fn start_keys_do_not_depend_on_positions() {
+        // 같은 글자를 다른 자리에 둔 레이아웃이라도 시작 키는 같음 (롤 가산 차이는 있을 수 있음).
+        let a = start_of("qwertyuiop\nasdfghjkl;\nzxcvbnm,./");
+        let b = start_of("qwfpgjluy;\narstdhneio\nzxcvbkm,./");
+        assert_eq!(a.len(), b.len());
+        assert!((MIN_START..=MAX_START).contains(&a.len()), "{a}");
     }
 
     #[test]
-    fn adds_vowel_when_home_row_has_none() {
+    fn start_keys_can_come_from_any_row() {
+        // 홈열에 모음이 하나도 없어도, 다른 줄의 흔한 글자로 시작할 수 있음.
         let start = start_of("qwertyuiop\nzsdfghjklx\nacvbnm,./;");
-        assert_eq!(start.len(), MAX_START + 1, "{start}");
+        assert!((MIN_START..=MAX_START).contains(&start.len()), "{start}");
         assert!(start.chars().any(|c| "aeiou".contains(c)), "{start}");
+    }
+
+    #[test]
+    fn start_keys_have_the_best_coverage_of_their_size() {
+        // 빔 탐색 결과가 전수 조사(4개 조합)와 같은지 확인.
+        let l = Layout::qwerty();
+        let w = WordList::english();
+        let n = Ngrams::from_words(&w);
+        let start = start_keys(&l, &w, &n);
+        if start.len() == 4 {
+            let tris = weighted_trigrams(&l, &n);
+            let cov = |m: u64| {
+                tris.iter()
+                    .filter(|&&(t, _)| t & !m == 0)
+                    .map(|t| t.1)
+                    .sum::<f64>()
+            };
+            let letters: Vec<char> = ('a'..='z').collect();
+            let mut best = 0.0f64;
+            for a in 0..26 {
+                for b in a + 1..26 {
+                    for c in b + 1..26 {
+                        for d in c + 1..26 {
+                            let m = mask_of([letters[a], letters[b], letters[c], letters[d]]);
+                            if w.available(m).len() >= MIN_START_WORDS {
+                                best = best.max(cov(m));
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(cov(mask_of(start.iter().copied())), best, "{start:?}");
+        }
     }
 
     #[test]
@@ -274,17 +297,17 @@ mod tests {
     fn corpus_trigrams_decide_the_order() {
         use crate::corpus::{Ngrams, tests::encode};
         let words = WordList::english();
-        // 시작 키 바로 다음: 'h'가 들어간 트라이그램만 아주 흔한 코퍼스 → h가 먼저 열려야 함.
+        // 'h', 'a'가 든 트라이그램만 아주 흔한 코퍼스 → 둘 다 시작 키에 들어가야 함.
         let ngrams = Ngrams::parse_corpus(&encode(
-            &[('h', 100), ('e', 1)],
+            &[('h', 100), ('a', 100), ('e', 1)],
             &[],
-            &[(['a', 'h', 'a'], 1_000_000), (['a', 'e', 'a'], 1)],
+            &[(['a', 'h', 'a'], 1_000_000), (['e', 'e', 'e'], 1)],
         ))
         .unwrap();
         let plan = make_plan_with(&Layout::qwerty(), &words, &ngrams);
         let start = start_keys(&Layout::qwerty(), &words, &ngrams);
         assert_eq!(&plan.order[..plan.start_len], &start[..]);
-        assert_eq!(plan.order[plan.start_len], 'h', "{:?}", plan.order);
+        assert!(start.contains(&'h') && start.contains(&'a'), "{start:?}");
         assert_eq!(plan.order.len(), 26);
     }
 }
