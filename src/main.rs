@@ -67,7 +67,7 @@ struct Args {
     dict: String,
 
     /// Letter/trigram stats (corpus.bin) used to order English key unlocks
-    /// [default: corpus.bin in the config folder, if it exists]
+    /// [default: assets/corpus.bin in the taja source folder, if it exists]
     #[arg(long)]
     corpus: Option<String>,
 }
@@ -90,9 +90,7 @@ fn run_app(args: Args) -> Result<(), String> {
             None => println!("Layouts folder:  (not found; pass a file path instead)"),
         }
         println!("Progress folder: {}", paths.profiles.display());
-        if let Some(c) = &paths.corpus {
-            println!("Corpus file:     {}", c.display());
-        }
+        println!("Corpus file:     {}", corpus::DEFAULT_CORPUS);
         return Ok(());
     }
     if !(1.0..=300.0).contains(&args.target_wpm) {
@@ -140,10 +138,12 @@ fn run_app(args: Args) -> Result<(), String> {
         let (ngrams, note) = match lang {
             Lang::Ko => (Ngrams::from_words(&words), None),
             Lang::En => {
-                let path = match (&args.corpus, &paths.corpus) {
-                    (Some(p), _) => Some(std::path::PathBuf::from(p)),
-                    (None, Some(p)) if p.is_file() => Some(p.clone()),
-                    _ => None,
+                // 직접 지정한 파일은 꼭 있어야 하고, 기본 위치는 있을 때만 씀.
+                let default = std::path::Path::new(corpus::DEFAULT_CORPUS);
+                let path = match &args.corpus {
+                    Some(p) => Some(std::path::PathBuf::from(p)),
+                    None if default.is_file() => Some(default.to_path_buf()),
+                    None => None,
                 };
                 match path {
                     Some(p) => {

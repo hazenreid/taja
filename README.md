@@ -30,7 +30,7 @@ cargo run --release -- --help           # 옵션 보기
 - `--reset`: 이 레이아웃의 진도를 지우고 처음부터
 - `--paths`: 레이아웃 폴더와 진도 폴더 위치 보기
 - `--dict <경로>`: 영어 단어를 가져올 사전 파일 (기본 `/usr/share/dict/words`)
-- `--corpus <경로>`: 영어 언락 순서에 쓸 `corpus.bin` (기본: 설정 폴더의 `corpus.bin`, `--paths`로 위치 확인)
+- `--corpus <경로>`: 영어 언락 순서에 쓸 `corpus.bin` (기본: 저장소의 `assets/corpus.bin`)
 
 ## 레이아웃 파일
 
@@ -58,7 +58,7 @@ kvgd..hcuw
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과 (corpus.bin 없이 맥 웹스터 사전 기준): 시작 키 `r o e t` (4개) → `n i a s l d c m u h p g b y f v k w x z q j`
+이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `r o e t` (4개) → `n i s a h d c l f m g u p b w v y k j x q z`
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -76,9 +76,15 @@ cargo run --release -- --layout layouts/mine.txt
   - 영어: `corpus.bin`의 트라이그램 빈도. 파일이 없으면 사전 단어로 센 값으로 대신함 (빈도 정보가 없어 덜 정확)
   - 한글: 내장 단어 목록의 빈도로 두벌식 키 트라이그램을 셈
   - 언락 순서는 진도를 처음 만들 때 계산함. `corpus.bin`을 바꾼 뒤에는 `--reset`으로 새로 시작해야 반영됨
-  - 결과 예 (corpus.bin 없이 맥 웹스터 사전 기준):
-    - QWERTY: `fjdksla` → `e i r t o n c u m h g p y b v w x z q`
-    - `layouts/mine.txt`: `r o e t` → `n i a s l d c m u h p g b y f v k w x z q j`
+  - 결과 예 (시작 키는 맥 웹스터 사전, 순서는 저장소의 `assets/corpus.bin` 기준):
+    - QWERTY: `fjdksla` → `e r i t h o n c m u g w p v b y x q z`
+    - `layouts/mine.txt`: `r o e t` → `n i s a h d c l f m g u p b w v y k j x q z`
+
+### corpus.bin 위치
+
+저장소의 **`assets/corpus.bin`**에 두면 됩니다. 빌드할 때 저장소 경로를 기억하므로 어느 폴더에서 실행해도 찾고,
+실행할 때마다 읽으므로 파일을 바꿔도 다시 빌드할 필요가 없습니다 (단, 언락 순서는 `--reset` 해야 새로 계산됨).
+다른 파일은 `--corpus <경로>`로 지정합니다.
 
 ### corpus.bin 형식
 

@@ -16,6 +16,9 @@ use std::collections::HashMap;
 
 use crate::words::WordList;
 
+/// corpus.bin 기본 위치: 저장소의 assets/corpus.bin (빌드할 때 저장소 경로가 들어감).
+pub const DEFAULT_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/corpus.bin");
+
 /// 단어 경계(공백). 공백은 항상 칠 수 있는 키로 봅니다.
 pub const SPACE: char = ' ';
 
@@ -224,5 +227,14 @@ pub mod tests {
         assert_eq!(get(['t', 'h', 'e']), Some(2.0));
         assert_eq!(get(['h', 'e', ' ']), Some(2.0));
         assert_eq!(n.letters[&'t'], 2.0);
+    }
+
+    #[test]
+    fn reads_the_bundled_corpus() {
+        let bytes = std::fs::read(DEFAULT_CORPUS).expect("assets/corpus.bin");
+        let n = Ngrams::parse_corpus(&bytes).unwrap();
+        assert_eq!(n.letters.len(), 27); // a~z + 공백
+        assert_eq!(n.trigrams.len(), 1677);
+        assert_eq!(n.trigrams[0].0, [' ', 't', 'h']);
     }
 }
