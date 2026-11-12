@@ -155,24 +155,34 @@ impl Profile {
 
     /// 집중 키: 열린 키 중 가장 연습이 필요한 키.
     /// 1. 아직 MIN_SAMPLES번을 못 친 키 (새로 열린 키는 기록이 없어서 먼저)
-    /// 2. 정확도가 가장 낮은 키
-    /// 3. 정확도가 같으면 속도가 느린 키, 그것도 같으면 나중에 열린 키
-    pub fn focus(&self) -> Option<char> {
+    /// 2. 정확도가 목표 미달인 키 중 정확도가 가장 낮은 키
+    /// 3. 속도가 목표 미달인 키 중 속도가 가장 느린 키
+    /// 4. 모두 목표를 넘었으면 정확도가 가장 낮은 키 (같으면 느린 키)
+    ///
+    /// 같은 단계에서 값이 같으면 나중에 열린 키.
+    pub fn focus(&self, t: Targets) -> Option<char> {
+        // (단계, 첫째 기준, 둘째 기준): 모두 작을수록 먼저.
         let rank = |s: &KeyStats| {
-            (
-                s.count() >= MIN_SAMPLES,
-                s.accuracy().unwrap_or(0.0),
-                s.wpm().unwrap_or(0.0),
-            )
+            let acc = s.accuracy().unwrap_or(0.0);
+            let wpm = s.wpm().unwrap_or(0.0);
+            if s.count() < MIN_SAMPLES {
+                (0, 0.0, 0.0)
+            } else if acc < t.accuracy {
+                (1, acc, wpm)
+            } else if wpm < t.wpm {
+                (2, wpm, acc)
+            } else {
+                (3, acc, wpm)
+            }
         };
         self.unlocked_keys()
             .iter()
             .enumerate()
             .rev()
             .min_by(|a, b| {
-                let (ea, aa, wa) = rank(&self.stats[a.0]);
-                let (eb, ab, wb) = rank(&self.stats[b.0]);
-                ea.cmp(&eb).then(aa.total_cmp(&ab)).then(wa.total_cmp(&wb))
+                let (ta, xa, ya) = rank(&self.stats[a.0]);
+                let (tb, xb, yb) = rank(&self.stats[b.0]);
+                ta.cmp(&tb).then(xa.total_cmp(&xb)).then(ya.total_cmp(&yb))
             })
             .map(|(_, &c)| c)
     }
@@ -279,13 +289,13 @@ mod tests {
         }
         assert_eq!(p.try_unlock(T), None);
         // 아직 안 친 마지막 키가 집중 키.
-        assert_eq!(p.focus(), keys.last().copied());
+        assert_eq!(p.focus(T), keys.last().copied());
         for _ in 0..MIN_SAMPLES {
             p.record(*keys.last().unwrap(), fast());
         }
         let next = p.next_locked();
         assert_eq!(p.try_unlock(T), next);
-        assert_eq!(p.focus(), next);
+        assert_eq!(p.focus(T), next);
     }
 
     #[test]
@@ -307,7 +317,7 @@ mod tests {
             ); // 12 WPM
         }
         assert_eq!(p.try_unlock(T), None);
-        assert_eq!(p.focus(), Some('d'));
+        assert_eq!(p.focus(T), Some('d'));
     }
 
     #[test]
@@ -351,38 +361,37 @@ mod tests {
     }
 
     #[test]
-    fn focus_prefers_lowest_accuracy() {
+    fn focus_picks_unmet_accuracy_then_unmet_speed() {
         let mut p = profile();
         let keys: Vec<char> = p.unlocked_keys().to_vec();
+        let (a, b, c) = (keys[0], keys[1], keys[2]);
         for &k in &keys {
-            for _ in 0..MIN_SAMPLES {
+            for _ in 0..WINDOW {
                 p.record(k, fast());
             }
         }
-        // 'd'는 느리지만 정확, 's'는 빠르지만 자주 틀림 → 's'가 집중 키.
-        for _ in 0..WINDOW {
-            p.record(
-                'd',
-                Sample {
-                    ms: Some(1000),
-                    clean: true,
-                },
-            );
-        }
-        for i in 0..WINDOW {
-            p.record(
-                's',
-                Sample {
-                    ms: Some(150),
-                    clean: i % 5 != 0,
-                },
-            );
-        }
-        assert_eq!(p.focus(), Some('s'));
-        // 정확도가 같으면 느린 키.
-        for _ in 0..WINDOW {
-            p.record('s', fast());
-        }
-        assert_eq!(p.focus(), Some('d'));
+        let set = |p: &mut Profile, k: char, ms: u32, wrong_every: usize| {
+            for i in 0..WINDOW {
+                p.record(
+                    k,
+                    Sample {
+                        ms: Some(ms),
+                        clean: wrong_every == 0 || i % wrong_every != 0,
+                    },
+                );
+            }
+        };
+        // a: 정확도 96.7%(목표 95% 넘음)지만 다른 키보다 낮음, b: 느림(목표 미달), 나머지: 완벽.
+        set(&mut p, a, 200, 30);
+        set(&mut p, b, 1000, 0);
+        // 목표를 넘은 a가 아니라, 목표 미달인 b가 집중 키.
+        assert_eq!(p.focus(T), Some(b));
+        // c가 정확도 미달이 되면, 속도 미달인 b보다 c가 먼저.
+        set(&mut p, c, 200, 5); // 80%
+        assert_eq!(p.focus(T), Some(c));
+        // 모두 목표를 넘으면 정확도가 가장 낮은 키.
+        set(&mut p, b, 200, 0);
+        set(&mut p, c, 200, 0);
+        assert_eq!(p.focus(T), Some(a));
     }
 }

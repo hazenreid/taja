@@ -71,7 +71,7 @@ impl App {
     }
 
     pub fn focus(&self) -> Option<char> {
-        self.profile.focus()
+        self.profile.focus(self.targets)
     }
 
     fn make_line(&mut self) -> Target {
