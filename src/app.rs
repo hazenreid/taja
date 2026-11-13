@@ -77,12 +77,19 @@ impl App {
     fn make_line(&mut self) -> Target {
         let focus = self.focus();
         let keys = self.profile.unlocked_keys().to_vec();
+        let weak: Vec<([char; 2], f64)> = self
+            .profile
+            .weak_pairs
+            .iter()
+            .map(|w| (w.pair, w.score))
+            .collect();
         Target::from_items(&build_line(
             &mut self.rng,
             &self.words,
             &keys,
             focus,
             &self.profile.missed,
+            &weak,
             self.line_width,
         ))
     }
@@ -123,8 +130,10 @@ impl App {
         if self.message.as_deref() == Some(IME_WARNING) {
             self.message = None;
         }
-        if let Outcome::Correct { ch, sample } = self.lesson.type_char(c, now) {
+        if let Outcome::Correct { ch, prev, sample } = self.lesson.type_char(c, now) {
             self.profile.record(ch, sample);
+            // 앞 키 → 이 키 연결이 약한지 기록 (틀렸으면 점수 올림, 한 번에 맞히면 깎음).
+            self.profile.record_pair(prev, ch, sample.clean);
             if self.lesson.is_done() {
                 self.finish_line(now);
             }
@@ -305,6 +314,28 @@ mod tests {
             }
             assert!(seen, "틀린 단어가 다시 안 나옴: {with_focus:?}");
         }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mistakes_record_weak_pairs() {
+        let (mut app, dir) = app_for(WordList::english(), "weak");
+        let keys = app.target.keys.clone();
+        // 두 번째 키에서 한 번 틀리고 나머지는 맞게.
+        let mut now = Instant::now();
+        for (i, &c) in keys.iter().enumerate() {
+            now += Duration::from_millis(150);
+            if i == 1 {
+                app.type_char('Q', now);
+            }
+            app.type_char(c, now);
+        }
+        let pair = [keys[0], keys[1]];
+        assert!(
+            app.profile.weak_pairs.iter().any(|w| w.pair == pair),
+            "{:?}",
+            app.profile.weak_pairs
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }

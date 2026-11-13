@@ -14,6 +14,14 @@ pub const WINDOW: usize = 30;
 pub const MIN_SAMPLES: usize = 20;
 /// 틀린 단어는 이만큼만 보관 (넘치면 오래된 것부터 버림).
 pub const MAX_MISSED: usize = 100;
+/// 약한 연결(앞 키 → 키)은 이만큼만 보관 (넘치면 점수가 가장 낮은 것부터 버림).
+pub const MAX_WEAK_PAIRS: usize = 50;
+/// 틀릴 때 더하는 점수와 최대 점수.
+const WEAK_HIT: f64 = 1.0;
+const WEAK_MAX: f64 = 5.0;
+/// 한 번에 맞게 칠 때마다 곱하는 값, 이보다 낮아지면 목록에서 뺌.
+const WEAK_DECAY: f64 = 0.8;
+const WEAK_MIN: f64 = 0.3;
 /// 기록을 이만큼만 보관.
 const MAX_HISTORY: usize = 2000;
 
@@ -105,6 +113,16 @@ pub struct Profile {
     /// 전에 틀린 진짜 단어 (오래된 것이 앞). 예전 진도 파일에는 없으므로 기본값은 빈 목록.
     #[serde(default)]
     pub missed: Vec<Item>,
+    /// 약한 연결: 바로 앞 키 → 이 키를 칠 때 틀린 기록. 공백은 단어 경계.
+    #[serde(default)]
+    pub weak_pairs: Vec<WeakPair>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WeakPair {
+    /// [앞 키, 키]. 예: `the`에서 h를 틀리면 ['t', 'h'], 단어 첫 글자면 [' ', 't'].
+    pub pair: [char; 2],
+    pub score: f64,
 }
 
 impl Profile {
@@ -116,6 +134,7 @@ impl Profile {
             stats: vec![KeyStats::default(); plan.order.len()],
             history: Vec::new(),
             missed: Vec::new(),
+            weak_pairs: Vec::new(),
         }
     }
 
@@ -195,6 +214,38 @@ impl Profile {
             Some(next)
         } else {
             None
+        }
+    }
+
+    /// 키 하나를 맞게 쳤을 때 (`prev` → `ch`). 이 자리에서 틀렸었으면 그 연결의 점수를 올리고,
+    /// 한 번에 맞혔으면 점수를 깎아서 충분히 낮아지면 목록에서 뺍니다.
+    pub fn record_pair(&mut self, prev: char, ch: char, clean: bool) {
+        let pair = [prev, ch];
+        let i = self.weak_pairs.iter().position(|w| w.pair == pair);
+        match (i, clean) {
+            (Some(i), true) => {
+                self.weak_pairs[i].score *= WEAK_DECAY;
+                if self.weak_pairs[i].score < WEAK_MIN {
+                    self.weak_pairs.remove(i);
+                }
+            }
+            (Some(i), false) => {
+                let w = &mut self.weak_pairs[i];
+                w.score = (w.score + WEAK_HIT).min(WEAK_MAX);
+            }
+            (None, true) => {}
+            (None, false) => {
+                self.weak_pairs.push(WeakPair {
+                    pair,
+                    score: WEAK_HIT,
+                });
+                if self.weak_pairs.len() > MAX_WEAK_PAIRS {
+                    let lowest = (0..self.weak_pairs.len())
+                        .min_by(|&a, &b| self.weak_pairs[a].score.total_cmp(&self.weak_pairs[b].score))
+                        .unwrap();
+                    self.weak_pairs.remove(lowest);
+                }
+            }
         }
     }
 
@@ -393,5 +444,41 @@ mod tests {
         set(&mut p, b, 200, 0);
         set(&mut p, c, 200, 0);
         assert_eq!(p.focus(T), Some(a));
+    }
+
+    #[test]
+    fn weak_pairs_grow_on_errors_and_fade_on_clean_hits() {
+        let mut p = profile();
+        p.record_pair('t', 'h', false);
+        p.record_pair('t', 'h', false);
+        p.record_pair(' ', 't', false);
+        p.record_pair('h', 'e', true); // 기록 없는 연결을 맞힌 건 무시
+        assert_eq!(p.weak_pairs.len(), 2);
+        assert_eq!(p.weak_pairs[0].pair, ['t', 'h']);
+        assert_eq!(p.weak_pairs[0].score, 2.0);
+        for _ in 0..10 {
+            p.record_pair('t', 'h', false);
+        }
+        assert_eq!(p.weak_pairs[0].score, WEAK_MAX);
+        // 한 번에 맞게 치면 점점 줄다가 빠짐.
+        let mut n = 0;
+        while p.weak_pairs.iter().any(|w| w.pair == ['t', 'h']) {
+            p.record_pair('t', 'h', true);
+            n += 1;
+        }
+        assert!((5..30).contains(&n), "{n}");
+    }
+
+    #[test]
+    fn weak_pairs_are_capped() {
+        let mut p = profile();
+        p.record_pair('a', 'b', false);
+        p.record_pair('a', 'b', false); // 점수 2라 안 버려짐
+        for i in 0..MAX_WEAK_PAIRS + 5 {
+            p.record_pair('x', char::from(b'a' + (i % 26) as u8), false);
+            p.record_pair('y', char::from(b'a' + (i % 26) as u8), false);
+        }
+        assert_eq!(p.weak_pairs.len(), MAX_WEAK_PAIRS);
+        assert!(p.weak_pairs.iter().any(|w| w.pair == ['a', 'b']));
     }
 }

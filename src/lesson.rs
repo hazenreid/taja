@@ -19,9 +19,10 @@ pub struct Lesson {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
-    /// 맞게 쳤음. `ch`는 친 글자.
+    /// 맞게 쳤음. `ch`는 친 글자, `prev`는 바로 앞 글자 (줄 첫 글자면 공백 = 단어 시작).
     Correct {
         ch: char,
+        prev: char,
         sample: Sample,
     },
     Wrong,
@@ -75,12 +76,21 @@ impl Lesson {
             ms,
             clean: !self.had_error[self.pos],
         };
+        let prev = if self.pos == 0 {
+            ' '
+        } else {
+            self.text[self.pos - 1]
+        };
         self.last_hit = Some(now);
         self.pos += 1;
         if self.is_done() {
             self.finished = Some(now);
         }
-        Outcome::Correct { ch: target, sample }
+        Outcome::Correct {
+            ch: target,
+            prev,
+            sample,
+        }
     }
 
     /// 첫 키부터 지금(또는 끝난 시점)까지의 WPM.
@@ -121,6 +131,7 @@ mod tests {
             out,
             Outcome::Correct {
                 ch: 'b',
+                prev: 'a',
                 sample: Sample {
                     ms: Some(300),
                     clean: false

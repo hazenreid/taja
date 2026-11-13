@@ -15,6 +15,20 @@ const REVIEW_RATE: f64 = 0.35;
 const ENOUGH_REAL_WORDS: usize = 15;
 /// 한 줄에 같은 단어는 이만큼까지만 (진짜 단어가 적을 때 같은 단어만 반복되지 않게).
 const MAX_REPEAT: usize = 2;
+/// 약한 연결 점수 1점당 단어 가중치를 이만큼 키움 (점수 1이면 1 + 2 = 3배).
+const WEAK_BOOST: f64 = 2.0;
+
+/// 단어에 든 약한 연결 점수의 합. 앞뒤 공백도 붙여서 단어 시작/끝 연결도 셉니다.
+fn weak_score(keys: &str, weak: &[([char; 2], f64)]) -> f64 {
+    if weak.is_empty() {
+        return 0.0;
+    }
+    let seq: Vec<char> = std::iter::once(' ').chain(keys.chars()).chain([' ']).collect();
+    weak.iter()
+        .filter(|(pair, _)| seq.windows(2).any(|w| w == pair))
+        .map(|(_, score)| score)
+        .sum()
+}
 
 /// 한 줄의 단어 하나.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,12 +65,14 @@ fn pseudo(rng: &mut impl Rng, list: &WordList, keys: &[char], focus: Option<char
 
 /// `max_width`칸 안에 들어가는 한 줄 (한글은 2칸).
 /// `review`는 전에 틀린 단어들. 열린 키로만 되어 있고 집중 키가 든 것만 섞어 넣습니다.
+/// `weak`는 약한 연결([앞 키, 키], 점수). 이 연결이 든 진짜 단어를 더 자주 고릅니다.
 pub fn build_line(
     rng: &mut impl Rng,
     list: &WordList,
     unlocked: &[char],
     focus: Option<char>,
     review: &[Item],
+    weak: &[([char; 2], f64)],
     max_width: usize,
 ) -> Vec<Item> {
     let keys: Vec<char> = unlocked
@@ -82,7 +98,7 @@ pub fn build_line(
             .iter()
             .enumerate()
             .filter(|(_, w)| used.get(&w.text).copied().unwrap_or(0) < MAX_REPEAT)
-            .map(|(i, w)| (i, w.weight))
+            .map(|(i, w)| (i, w.weight * (1.0 + WEAK_BOOST * weak_score(&w.keys, weak))))
             .collect();
         pick_weighted(rng, &options).map(|i| Item {
             text: real[i].text.clone(),
@@ -171,7 +187,7 @@ mod tests {
             for unlocked in sets {
                 let keys = chars(unlocked);
                 for _ in 0..100 {
-                    let items = build_line(&mut rng, &list, &keys, keys.last().copied(), &[], 50);
+                    let items = build_line(&mut rng, &list, &keys, keys.last().copied(), &[], &[], 50);
                     let text = line_text(&items);
                     assert!(!items.is_empty());
                     assert!(display_width(&text) <= 50, "{text}");
@@ -195,7 +211,7 @@ mod tests {
             let keys = chars(unlocked);
             for f in focuses.chars() {
                 for _ in 0..50 {
-                    for item in build_line(&mut rng, &list, &keys, Some(f), &[], 50) {
+                    for item in build_line(&mut rng, &list, &keys, Some(f), &[], &[], 50) {
                         assert!(item.keys.contains(f), "'{f}' not in {item:?}");
                     }
                 }
@@ -217,7 +233,7 @@ mod tests {
         let review = [word("tide"), word("side"), word("tick")];
         let (mut tide, mut side, mut tick) = (0, 0, 0);
         for _ in 0..200 {
-            for item in build_line(&mut rng, &list, &keys, Some('t'), &review, 50) {
+            for item in build_line(&mut rng, &list, &keys, Some('t'), &review, &[], 50) {
                 tide += (item.text == "tide") as usize;
                 side += (item.text == "side") as usize;
                 tick += (item.text == "tick") as usize;
@@ -234,7 +250,7 @@ mod tests {
         let keys = chars("fjdkslaeit");
         for f in ['t', 'e', 'a'] {
             for _ in 0..100 {
-                for item in build_line(&mut rng, &list, &keys, Some(f), &[], 50) {
+                for item in build_line(&mut rng, &list, &keys, Some(f), &[], &[], 50) {
                     assert!(item.real, "가짜 단어: {item:?} (focus {f})");
                 }
             }
@@ -253,7 +269,7 @@ mod tests {
             .count();
         assert!(real_with_j < ENOUGH_REAL_WORDS, "{real_with_j}");
         for _ in 0..100 {
-            let items = build_line(&mut rng, &list, &keys, Some('j'), &[], 50);
+            let items = build_line(&mut rng, &list, &keys, Some('j'), &[], &[], 50);
             let mut count: HashMap<&str, usize> = HashMap::new();
             for item in items.iter().filter(|i| i.real) {
                 *count.entry(item.text.as_str()).or_insert(0) += 1;
@@ -264,5 +280,33 @@ mod tests {
                 assert_eq!(count.len(), real_with_j, "{items:?}");
             }
         }
+    }
+
+    #[test]
+    fn weak_pairs_make_their_words_more_common() {
+        let list = WordList::english();
+        let keys = chars("fjdkslaeitrhon");
+        let share_with_th = |weak: &[([char; 2], f64)]| {
+            let mut rng = StdRng::seed_from_u64(13);
+            let (mut with, mut total) = (0, 0);
+            for _ in 0..300 {
+                for item in build_line(&mut rng, &list, &keys, Some('e'), &[], weak, 50) {
+                    total += 1;
+                    with += item.keys.contains("th") as usize;
+                }
+            }
+            with as f64 / total as f64
+        };
+        let before = share_with_th(&[]);
+        let after = share_with_th(&[(['t', 'h'], 2.0)]);
+        assert!(after > before * 1.5, "{before} -> {after}");
+    }
+
+    #[test]
+    fn weak_score_counts_word_edges() {
+        let weak = [([' ', 't'], 1.0), (['e', ' '], 2.0), (['t', 'h'], 0.5)];
+        assert_eq!(weak_score("the", &weak), 3.5);
+        assert_eq!(weak_score("ate", &weak), 2.0);
+        assert_eq!(weak_score("as", &weak), 0.0);
     }
 }
