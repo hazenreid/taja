@@ -49,16 +49,17 @@ zxcvbnm,./
 저장소에 있는 예시: `layouts/mine.txt`
 
 ```
-pmal.zbfjy
-inerqxot.s
-kvgd..hcuw
+pmorq.whdj
+cianxzt_se
+vgkl..fuby
 ```
 
 ```sh
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t s h` (4개) → `a r n i o d c l m f u g p w b y v k j x q z`
+이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t s h` (4개) → `a r n i o d c l m f u p g w b y v k j x q z`
+(영어에서 가장 흔한 트라이그램 `the`가 이 배열에서는 롤)
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -79,8 +80,9 @@ cargo run --release -- --layout layouts/mine.txt
   - 한글: 내장 단어 목록의 빈도로 두벌식 키 트라이그램을 셈
   - 언락 순서는 진도를 처음 만들 때 계산함. `corpus.bin`을 바꾼 뒤에는 `--reset`으로 새로 시작해야 반영됨
   - 결과 예 (시작 키는 맥 웹스터 사전, 순서는 저장소의 `assets/corpus.bin` 기준):
-    - QWERTY, `layouts/mine.txt` 모두: `eths` → `a r n i o d c l m f u g p w b y v k j x q z`
-    - 자리를 안 따지므로 레이아웃이 순서에 주는 영향은 롤 가산뿐이고, 영어에서는 순위가 바뀌지 않음
+    - QWERTY: `eths` → `a r n i o d c l m f u g p w b y v k j x q z`
+    - `layouts/mine.txt`: `eths` → `a r n i o d c l m f u p g w b y v k j x q z`
+    - 자리를 안 따지므로 레이아웃이 순서에 주는 영향은 롤 가산뿐이라 차이가 작음
 
 ### corpus.bin 위치
 
@@ -181,7 +183,7 @@ cargo test
 - 단어는 키 순서로 바꿔서 비교합니다 (`학교` → `gkrry`). 목표 줄 아래에 친 키가 조합된 모습(`ㅎ` → `하` → `학`)이 보입니다.
 - 진짜 단어가 모자랄 때만 열린 자모로 만든 음절(홑모음만, 받침은 ㄱ ㄴ ㄹ ㅁ ㅂ ㅅ ㅆ ㅇ만)로 채웁니다.
 - 속도는 분당 타수(KPM, keystrokes per minute)로 표시합니다. 진도는 영어와 따로 저장됩니다 (`<레이아웃>-ko.json`).
-- 계산 결과: 시작 키는 `ㅇ ㅣ ㄹ ㅡ`(d l f m). 그다음 순서는 QWERTY `ㄴ ㅏ ㄱ ㅗ ㄷ ㅓ ㅎ …`, `layouts/mine.txt` `ㄴ ㅏ ㄱ ㄷ ㅗ ㅎ ㅓ …`.
+- 계산 결과: 시작 키는 `ㅇ ㅣ ㄹ ㅡ`(d l f m). 그다음 순서는 QWERTY `ㄴ ㅏ ㄱ ㅗ ㄷ ㅓ ㅎ …`, `layouts/mine.txt` `ㄴ ㅏ ㄱ ㅗ ㄷ ㅓ ㅎ …`.
   Shift 키도 자리 비용 없이 빈도로만 정해짐 (`ㅆ`이 Shift 키 중 가장 먼저)
 
 ### 한글 단어 목록
