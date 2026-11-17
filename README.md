@@ -49,17 +49,17 @@ zxcvbnm,./
 저장소에 있는 예시: `layouts/mine.txt`
 
 ```
-pmorq.whdj
-cianxzt_se
-vgkl..fuby
+.blyx.foup
+manijzreht
+cgkdq.s.vw
 ```
 
 ```sh
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t s h` (4개) → `a r n i o d c l m f u p g w b y v k j x q z`
-(영어에서 가장 흔한 트라이그램 `the`가 이 배열에서는 롤)
+이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t r h` (4개) → `a s n i o d c l m f u g p w b y v k j x q z`
+(영어 상위 트라이그램 중 `the`, `and`, `ing`, `ter`, `her`, `ver`가 이 배열에서는 롤)
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -81,7 +81,7 @@ cargo run --release -- --layout layouts/mine.txt
   - 언락 순서는 진도를 처음 만들 때 계산함. `corpus.bin`을 바꾼 뒤에는 `--reset`으로 새로 시작해야 반영됨
   - 결과 예 (시작 키는 맥 웹스터 사전, 순서는 저장소의 `assets/corpus.bin` 기준):
     - QWERTY: `eths` → `a r n i o d c l m f u g p w b y v k j x q z`
-    - `layouts/mine.txt`: `eths` → `a r n i o d c l m f u p g w b y v k j x q z`
+    - `layouts/mine.txt`: `ethr` → `a s n i o d c l m f u g p w b y v k j x q z` (롤 가산 때문에 `r`이 시작 키에 들어감)
     - 자리를 안 따지므로 레이아웃이 순서에 주는 영향은 롤 가산뿐이라 차이가 작음
 
 ### corpus.bin 위치
