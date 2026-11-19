@@ -28,8 +28,6 @@ pub struct Ngrams {
     pub letters: HashMap<char, f64>,
     /// (세 글자, 빈도).
     pub trigrams: Vec<([char; 3], f64)>,
-    /// (두 글자, 빈도). 2글자 단어를 거를 때 씀.
-    pub bigrams: Vec<([char; 2], f64)>,
 }
 
 struct Reader<'a> {
@@ -94,7 +92,7 @@ impl Ngrams {
     pub fn parse_corpus(bytes: &[u8]) -> Result<Self, String> {
         let mut r = Reader { bytes, pos: 0 };
         let letters = r.map::<1>()?;
-        let bigrams = r.map::<2>()?;
+        let _bigrams = r.map::<2>()?;
         let trigrams = r.map::<3>()?;
         if r.pos != bytes.len() {
             return Err(format!(
@@ -113,15 +111,6 @@ impl Ngrams {
                 *out.letters.entry(c).or_insert(0.0) += n as f64;
             }
         }
-        let mut bi: HashMap<[char; 2], f64> = HashMap::new();
-        for ([a, b], n) in bigrams {
-            if let (Some(a), Some(b)) = (norm(a), norm(b)) {
-                *bi.entry([a, b]).or_insert(0.0) += n as f64;
-            }
-        }
-        out.bigrams = bi.into_iter().collect();
-        out.bigrams
-            .sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         let mut tri: HashMap<[char; 3], f64> = HashMap::new();
         for ([a, b, c], n) in trigrams {
             if let (Some(a), Some(b), Some(c)) = (norm(a), norm(b), norm(c)) {
@@ -246,7 +235,6 @@ pub mod tests {
         let n = Ngrams::parse_corpus(&bytes).unwrap();
         assert!(n.letters.len() >= 26);
         assert!(n.trigrams.len() > 1000);
-        assert!(n.bigrams.len() > 300);
         assert_eq!(n.trigrams[0].0, ['t', 'h', 'e']);
     }
 }
