@@ -110,6 +110,30 @@ fn run_app(args: Args) -> Result<(), String> {
         LangArg::Ko => Lang::Ko,
     };
     // 영어는 사전 파일에서만, 한글은 내장 단어 목록에서.
+    // 영어 말뭉치(corpus.bin): 직접 지정한 파일은 꼭 있어야 하고, 기본 위치는 있을 때만 씀.
+    let corpus: Option<Ngrams> = match lang {
+        Lang::Ko => None,
+        Lang::En => {
+            let default = std::path::Path::new(corpus::DEFAULT_CORPUS);
+            let path = match &args.corpus {
+                Some(p) => Some(std::path::PathBuf::from(p)),
+                None if default.is_file() => Some(default.to_path_buf()),
+                None => None,
+            };
+            match path {
+                Some(p) => {
+                    let bytes = std::fs::read(&p)
+                        .map_err(|e| format!("cannot read corpus ({}): {e}", p.display()))?;
+                    let n = Ngrams::parse_corpus(&bytes)
+                        .map_err(|e| format!("invalid corpus ({}): {e}", p.display()))?;
+                    Some(n)
+                }
+                None => None,
+            }
+        }
+    };
+
+    // 영어는 사전 파일에서만, 한글은 내장 단어 목록에서.
     let words = match lang {
         Lang::En => {
             let text = std::fs::read_to_string(&args.dict).map_err(|e| {
@@ -118,7 +142,11 @@ fn run_app(args: Args) -> Result<(), String> {
                     args.dict
                 )
             })?;
-            let words = WordList::english_from(&text);
+            let mut words = WordList::english_from(&text);
+            // 말뭉치가 있으면, 모든 트라이그램(단어 시작·끝 포함)이 말뭉치에 있는 단어만 씀.
+            if let Some(n) = &corpus {
+                words.keep_corpus_words(n);
+            }
             if words.words.is_empty() {
                 return Err(format!("no usable words in dictionary ({})", args.dict));
             }
@@ -135,30 +163,13 @@ fn run_app(args: Args) -> Result<(), String> {
     // 언락 순서는 새 진도를 만들 때만 계산합니다.
     // 영어: corpus.bin의 트라이그램 (없으면 사전 단어로 셈), 한글: 내장 단어 빈도.
     let new_plan = || -> Result<(Plan, Option<String>), String> {
-        let (ngrams, note) = match lang {
-            Lang::Ko => (Ngrams::from_words(&words), None),
-            Lang::En => {
-                // 직접 지정한 파일은 꼭 있어야 하고, 기본 위치는 있을 때만 씀.
-                let default = std::path::Path::new(corpus::DEFAULT_CORPUS);
-                let path = match &args.corpus {
-                    Some(p) => Some(std::path::PathBuf::from(p)),
-                    None if default.is_file() => Some(default.to_path_buf()),
-                    None => None,
-                };
-                match path {
-                    Some(p) => {
-                        let bytes = std::fs::read(&p)
-                            .map_err(|e| format!("cannot read corpus ({}): {e}", p.display()))?;
-                        let n = Ngrams::parse_corpus(&bytes)
-                            .map_err(|e| format!("invalid corpus ({}): {e}", p.display()))?;
-                        (n, None)
-                    }
-                    None => (
-                        Ngrams::from_words(&words),
-                        Some("no corpus.bin, unlock order from dictionary".to_string()),
-                    ),
-                }
-            }
+        let (ngrams, note) = match (&corpus, lang) {
+            (Some(n), _) => (n.clone(), None),
+            (None, Lang::Ko) => (Ngrams::from_words(&words), None),
+            (None, Lang::En) => (
+                Ngrams::from_words(&words),
+                Some("no corpus.bin, unlock order from dictionary".to_string()),
+            ),
         };
         Ok((make_plan_with(&layout, &words, &ngrams), note))
     };

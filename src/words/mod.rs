@@ -150,6 +150,30 @@ impl WordList {
         l
     }
 
+    /// 말뭉치에 있는 트라이그램으로만 이루어진 단어만 남깁니다.
+    /// - 말뭉치에 공백이 든 트라이그램이 있으면 단어 앞뒤에 공백을 붙여 단어 시작·끝(` an`, `er `)도 봄
+    /// - 없으면 단어 안쪽 트라이그램만 봄
+    /// - 그래서 트라이그램이 하나도 없는 짧은 단어(2글자)는 바이그램이 말뭉치에 있는지로 판단
+    pub fn keep_corpus_words(&mut self, corpus: &crate::corpus::Ngrams) {
+        use std::collections::HashSet;
+        let tri: HashSet<[char; 3]> = corpus.trigrams.iter().map(|t| t.0).collect();
+        let bi: HashSet<[char; 2]> = corpus.bigrams.iter().map(|b| b.0).collect();
+        let edges = tri.iter().any(|t| t.contains(&' '));
+        self.words.retain(|w| {
+            let seq: Vec<char> = if edges {
+                std::iter::once(' ').chain(w.keys.chars()).chain([' ']).collect()
+            } else {
+                w.keys.chars().collect()
+            };
+            if seq.len() >= 3 {
+                seq.windows(3).all(|t| tri.contains(&[t[0], t[1], t[2]]))
+            } else {
+                seq.windows(2).all(|b| bi.contains(&[b[0], b[1]]))
+            }
+        });
+        self.bigram = Bigram::from_words(&self.words);
+    }
+
     /// 테스트용 영어 단어 목록.
     #[cfg(test)]
     pub fn english() -> Self {
@@ -274,5 +298,39 @@ mod tests {
         assert_eq!(hakgyo.keys, "gkrry");
         // 자막 목록 맨 앞 단어가 가장 큰 가중치.
         assert_eq!(l.words.iter().find(|w| w.text == "내가").unwrap().weight, 2.5);
+    }
+
+    #[test]
+    fn keeps_only_words_made_of_corpus_trigrams() {
+        use crate::corpus::Ngrams;
+        let mut l = WordList::english_from("the\nthe\nten\nhen\nteh\n");
+        let corpus = Ngrams {
+            trigrams: [" th", "the", "he ", " te", "ten", "en ", " he", "hen"]
+                .iter()
+                .map(|t| {
+                    let c: Vec<char> = t.chars().collect();
+                    ([c[0], c[1], c[2]], 1.0)
+                })
+                .collect(),
+            ..Default::default()
+        };
+        l.keep_corpus_words(&corpus);
+        let texts: Vec<_> = l.words.iter().map(|w| w.text.as_str()).collect();
+        // teh는 "teh", "eh "가 말뭉치에 없어서 빠짐.
+        assert_eq!(texts, ["the", "ten", "hen"]);
+    }
+
+    #[test]
+    fn corpus_without_spaces_checks_inner_trigrams_and_short_word_bigrams() {
+        use crate::corpus::Ngrams;
+        let mut l = WordList::english_from("the\nthen\nteh\nhe\neh\n");
+        let corpus = Ngrams {
+            trigrams: vec![(['t', 'h', 'e'], 1.0), (['h', 'e', 'n'], 1.0)],
+            bigrams: vec![(['h', 'e'], 1.0)],
+            ..Default::default()
+        };
+        l.keep_corpus_words(&corpus);
+        let texts: Vec<_> = l.words.iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(texts, ["the", "then", "he"]);
     }
 }
