@@ -202,7 +202,7 @@ mod tests {
         let plan = make_plan(&Layout::qwerty(), &WordList::english());
         let start: String = plan.order[..plan.start_len].iter().collect();
         // 자리와 상관없이 빈도가 높은 키 4개 (윗줄 e, t 포함).
-        assert_eq!(start, "estd");
+        assert_eq!(start, "estr");
         // ; , . / 는 빈 칸이라 키는 26개.
         assert_eq!(plan.order.len(), 26);
         // 모든 키가 한 번씩.

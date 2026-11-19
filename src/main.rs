@@ -62,10 +62,6 @@ struct Args {
     #[arg(long)]
     paths: bool,
 
-    /// English word list to practice from (one word per line)
-    #[arg(long, default_value = words::DEFAULT_DICT)]
-    dict: String,
-
     /// Letter/trigram stats (corpus.bin) used to order English key unlocks
     /// [default: assets/corpus.bin in the taja source folder, if it exists]
     #[arg(long)]
@@ -109,8 +105,8 @@ fn run_app(args: Args) -> Result<(), String> {
         LangArg::En => Lang::En,
         LangArg::Ko => Lang::Ko,
     };
-    // 영어는 사전 파일에서만, 한글은 내장 단어 목록에서.
-    // 영어 말뭉치(corpus.bin): 직접 지정한 파일은 꼭 있어야 하고, 기본 위치는 있을 때만 씀.
+    // 영어 말뭉치(corpus.bin): 시작 키와 언락 순서 계산에 씀.
+    // 직접 지정한 파일은 꼭 있어야 하고, 기본 위치는 있을 때만 씀.
     let corpus: Option<Ngrams> = match lang {
         Lang::Ko => None,
         Lang::En => {
@@ -133,25 +129,9 @@ fn run_app(args: Args) -> Result<(), String> {
         }
     };
 
-    // 영어는 사전 파일에서만, 한글은 내장 단어 목록에서.
+    // 영어는 내장 SCOWL 단어, 한글은 내장 단어 목록.
     let words = match lang {
-        Lang::En => {
-            let text = std::fs::read_to_string(&args.dict).map_err(|e| {
-                format!(
-                    "cannot read dictionary ({}): {e}\nPass a word list with --dict <path>",
-                    args.dict
-                )
-            })?;
-            let mut words = WordList::english_from(&text);
-            // 말뭉치가 있으면, 모든 트라이그램(단어 시작·끝 포함)이 말뭉치에 있는 단어만 씀.
-            if let Some(n) = &corpus {
-                words.keep_corpus_words(n);
-            }
-            if words.words.is_empty() {
-                return Err(format!("no usable words in dictionary ({})", args.dict));
-            }
-            words
-        }
+        Lang::En => WordList::english(),
         Lang::Ko => WordList::korean(),
     };
     // 진도는 레이아웃과 언어마다 따로.
@@ -161,14 +141,14 @@ fn run_app(args: Args) -> Result<(), String> {
     };
 
     // 언락 순서는 새 진도를 만들 때만 계산합니다.
-    // 영어: corpus.bin의 트라이그램 (없으면 사전 단어로 셈), 한글: 내장 단어 빈도.
+    // 영어: corpus.bin의 트라이그램 (없으면 단어 목록으로 셈), 한글: 내장 단어 빈도.
     let new_plan = || -> Result<(Plan, Option<String>), String> {
         let (ngrams, note) = match (&corpus, lang) {
             (Some(n), _) => (n.clone(), None),
             (None, Lang::Ko) => (Ngrams::from_words(&words), None),
             (None, Lang::En) => (
                 Ngrams::from_words(&words),
-                Some("no corpus.bin, unlock order from dictionary".to_string()),
+                Some("no corpus.bin, unlock order from word list".to_string()),
             ),
         };
         Ok((make_plan_with(&layout, &words, &ngrams), note))

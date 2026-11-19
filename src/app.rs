@@ -321,21 +321,20 @@ mod tests {
     fn mistakes_record_weak_pairs() {
         let (mut app, dir) = app_for(WordList::english(), "weak");
         let keys = app.target.keys.clone();
-        // 두 번째 키에서 한 번 틀리고 나머지는 맞게.
         let mut now = Instant::now();
-        for (i, &c) in keys.iter().enumerate() {
-            now += Duration::from_millis(150);
-            if i == 1 {
-                app.type_char('Q', now);
-            }
-            app.type_char(c, now);
-        }
+        // 첫 키는 맞게, 두 번째 키에서 한 번 틀린 뒤 맞게 → 바로 (첫 키 → 둘째 키) 연결이 기록됨.
+        app.type_char(keys[0], now);
+        now += Duration::from_millis(150);
+        app.type_char('Q', now);
+        app.type_char(keys[1], now);
         let pair = [keys[0], keys[1]];
-        assert!(
-            app.profile.weak_pairs.iter().any(|w| w.pair == pair),
-            "{:?}",
-            app.profile.weak_pairs
-        );
+        let score = app
+            .profile
+            .weak_pairs
+            .iter()
+            .find(|w| w.pair == pair)
+            .map(|w| w.score);
+        assert_eq!(score, Some(1.0), "{:?}", app.profile.weak_pairs);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

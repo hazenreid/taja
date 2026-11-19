@@ -358,9 +358,10 @@ mod tests {
                 p.record(k, fast());
             }
         }
+        let slow = keys[1];
         for _ in 0..WINDOW {
             p.record(
-                'd',
+                slow,
                 Sample {
                     ms: Some(1000),
                     clean: true,
@@ -368,7 +369,7 @@ mod tests {
             ); // 12 WPM
         }
         assert_eq!(p.try_unlock(T), None);
-        assert_eq!(p.focus(T), Some('d'));
+        assert_eq!(p.focus(T), Some(slow));
     }
 
     #[test]

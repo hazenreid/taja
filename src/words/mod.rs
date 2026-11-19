@@ -11,15 +11,12 @@ use generator::Bigram;
 
 use crate::hangul;
 
-/// 영어 단어는 실행할 때 사전 파일(기본 /usr/share/dict/words)에서 읽습니다.
-/// 맥과 대부분의 리눅스에 있는 영어 단어 목록입니다.
-pub const DEFAULT_DICT: &str = "/usr/share/dict/words";
-/// 사전 단어 중 이보다 긴 단어는 연습에 쓰지 않습니다.
-pub const MAX_EN_WORD_LEN: usize = 10;
-
-/// 테스트 전용 영어 단어 (실제 실행에는 쓰지 않음).
-#[cfg(test)]
-const TEST_EN: &str = include_str!("testdata/en.txt");
+/// 영어: SCOWL 공개 단어 목록 10·20단계 (scripts/import_scowl.py 로 생성).
+/// 각 파일에는 그 단계에서 새로 나오는 단어만 있습니다. 10단계가 더 흔한 단어라 더 자주 나옴.
+const SCOWL: [(&str, f64); 2] = [
+    (include_str!("../../assets/words/scowl/level10.txt"), 2.0),
+    (include_str!("../../assets/words/scowl/level20.txt"), 1.0),
+];
 
 /// 한글: 영화 자막 빈도순 목록 (scripts/import_ko_subtitles.py 로 생성, CC BY-SA 4.0).
 const KO_SUBTITLES: &str = include_str!("../../assets/words/ko/subtitles/top.txt");
@@ -141,30 +138,9 @@ fn split_lines(text: &str, n: usize) -> (&str, &str) {
 }
 
 impl WordList {
-    /// 사전 파일 내용으로 영어 단어 목록을 만듭니다 (한 줄에 한 단어).
-    /// 모두 소문자로 바꾸고, 영어 글자로만 된 2~MAX_EN_WORD_LEN글자 단어를 씁니다.
-    pub fn english_from(dict: &str) -> Self {
-        let mut l = Self::from_sources(Lang::En, &[(dict, 1.0)]);
-        l.words.retain(|w| w.keys.len() <= MAX_EN_WORD_LEN);
-        l.bigram = Bigram::from_words(&l.words);
-        l
-    }
-
-    /// 말뭉치에 있는 트라이그램을 하나라도 포함한 단어만 남깁니다 (단어 안쪽만 보고, 공백은 안 봄).
-    /// 트라이그램이 없는 2글자 단어는 빠집니다.
-    pub fn keep_corpus_words(&mut self, corpus: &crate::corpus::Ngrams) {
-        let tri: std::collections::HashSet<[char; 3]> = corpus.trigrams.iter().map(|t| t.0).collect();
-        self.words.retain(|w| {
-            let keys: Vec<char> = w.keys.chars().collect();
-            keys.windows(3).any(|t| tri.contains(&[t[0], t[1], t[2]]))
-        });
-        self.bigram = Bigram::from_words(&self.words);
-    }
-
-    /// 테스트용 영어 단어 목록.
-    #[cfg(test)]
+    /// 영어 단어 목록 (내장 SCOWL 20단계 이하, 10단계 단어가 더 자주 나옴).
     pub fn english() -> Self {
-        Self::english_from(TEST_EN)
+        Self::from_sources(Lang::En, &SCOWL)
     }
 
     pub fn korean() -> Self {
@@ -252,12 +228,17 @@ mod tests {
     }
 
     #[test]
-    fn dictionary_is_lowercased_deduped_and_length_limited() {
-        let l = WordList::english_from("Paris\nparis\nJak\nfoo-bar\nx\n  Dajl  \nabcdefghijk\n");
-        let texts: Vec<_> = l.words.iter().map(|w| w.text.as_str()).collect();
-        // foo-bar(기호), x(1글자), abcdefghijk(11글자)는 못 씀. Paris/paris는 하나로.
-        assert_eq!(texts, ["paris", "jak", "dajl"]);
-        assert!(l.words.iter().all(|w| w.weight == 1.0));
+    fn builtin_english_is_scowl() {
+        let l = WordList::english();
+        assert!(l.words.len() > 10_000, "단어 수: {}", l.words.len());
+        // 10단계(흔한 단어)가 더 큰 가중치.
+        let w = |t: &str| l.words.iter().find(|w| w.text == t).map(|w| w.weight);
+        assert_eq!(w("the"), Some(2.0));
+        assert!(
+            l.words
+                .iter()
+                .all(|w| w.text.len() >= 2 && w.text.chars().all(|c| c.is_ascii_lowercase()))
+        );
     }
 
     #[test]
@@ -285,19 +266,5 @@ mod tests {
         assert_eq!(hakgyo.keys, "gkrry");
         // 자막 목록 맨 앞 단어가 가장 큰 가중치.
         assert_eq!(l.words.iter().find(|w| w.text == "내가").unwrap().weight, 2.5);
-    }
-
-    #[test]
-    fn keeps_words_with_any_corpus_trigram() {
-        use crate::corpus::Ngrams;
-        let mut l = WordList::english_from("the\nother\nqzx\nhe\nbathe\n");
-        let corpus = Ngrams {
-            trigrams: vec![(['t', 'h', 'e'], 1.0), ([' ', 'q', 'z'], 1.0)],
-            ..Default::default()
-        };
-        l.keep_corpus_words(&corpus);
-        let texts: Vec<_> = l.words.iter().map(|w| w.text.as_str()).collect();
-        // qzx: 안쪽 트라이그램 "qzx"가 없음(공백 트라이그램은 안 봄), he: 2글자라 트라이그램 없음.
-        assert_eq!(texts, ["the", "other", "bathe"]);
     }
 }
