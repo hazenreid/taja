@@ -6,7 +6,7 @@
     mkdir scowl && tar xzf scowl.tar.gz -C scowl
     python3 scripts/import_scowl.py scowl/scowl-2020.12.07
 
-- 10, 20단계만 씁니다 (숫자가 작을수록 흔한 단어). 각 파일에는 그 단계에서 새로 나오는 단어만 들어갑니다.
+- 10단계(가장 흔한 단어)만 씁니다. 단계를 늘리려면 LEVELS에 20, 35 등을 더하면 각 단계에서 새로 나오는 단어가 levelN.txt로 생김.
 - english(공통) + american 목록을 합칩니다.
 - 영어 소문자 2글자 이상만 남깁니다 (고유명사, 약어, 아포스트로피 제외). 그 밖에 거르는 단어는 없습니다.
 """
@@ -16,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
-LEVELS = [10, 20]
+LEVELS = [10]
 VARIANTS = ["english", "american"]
 WORD = re.compile(r"[a-z]{2,}")
 

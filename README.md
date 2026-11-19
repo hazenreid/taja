@@ -126,11 +126,12 @@ cargo run --release -- --layout layouts/mine.txt
 
 ## 연습 문장
 
-- **영어 단어: 내장 SCOWL 20단계 이하 (약 1만 900개)**
-  - SCOWL(맞춤법 검사기용 영어 단어 목록)의 10단계(가장 흔한 단어 약 4천 개)와 20단계(흔한 단어 약 7천 개)
-  - 10단계 단어가 2배 자주 나옴. 활용형 포함 (`drive`, `drives`, `driving`)
+- **영어 단어: 내장 SCOWL 10단계 (가장 흔한 단어 약 4천 개)**
+  - SCOWL(맞춤법 검사기용 영어 단어 목록)에서 가장 흔한 단계만 씀. 활용형 포함 (`drive`, `drives`, `driving`)
   - 영어 소문자 2글자 이상만, 그 밖에 거르는 단어 없음
-  - 예: 키 4개(`e t r h`) `he three here there the`, 키 7개 `artists raises stairs easiest`
+  - 예: 키 4개(`e t r h`, 10단어) `three there her he the teeth`, 키 5개 `ate eat hear that heart`,
+    키 7개 `sit hair raises irritates this`
+  - 키 4개 단계는 단어가 10개뿐이라 같은 단어가 자주 반복됨. 키가 하나 더 열리면 29개로 늘어남
 - **진짜 단어 우선**: 집중 키가 든 진짜 단어가 15개 이상이면 진짜 단어만 씀
   - 그보다 적으면 진짜 단어를 한 줄에 각 2번까지 먼저 쓰고, 남는 자리만 가짜 단어로 채움
   - 가짜 단어는 영어 글자 연결 빈도로 만듦 (예: `flads`, `kalds`). 집중 키가 든 진짜 단어가 아예 없을 때 주로 나옴
@@ -176,8 +177,8 @@ cargo test
 ## 단어 목록 출처
 
 영어 단어는 [SCOWL](http://wordlist.aspell.net/) (Spell Checker Oriented Word Lists, Kevin Atkinson)
-2020.12.07 판의 10·20단계에서 가져왔습니다. 저작권 표시와 사용 조건은 `assets/words/scowl/COPYRIGHT.txt`에 있습니다.
-`scripts/import_scowl.py`로 다시 만들 수 있습니다 (단계는 스크립트의 `LEVELS`).
+2020.12.07 판의 10단계에서 가져왔습니다. 저작권 표시와 사용 조건은 `assets/words/scowl/COPYRIGHT.txt`에 있습니다.
+`scripts/import_scowl.py`로 다시 만들 수 있습니다. 단계를 늘리려면 스크립트의 `LEVELS`와 `src/words/mod.rs`의 `SCOWL`에 더하면 됩니다.
 
 ## 한글 (`--lang ko`)
 

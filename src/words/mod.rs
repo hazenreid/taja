@@ -11,13 +11,8 @@ use generator::Bigram;
 
 use crate::hangul;
 
-/// 영어: SCOWL 공개 단어 목록 10·20단계 (scripts/import_scowl.py 로 생성).
-/// 각 파일에는 그 단계에서 새로 나오는 단어만 있습니다. 10단계가 더 흔한 단어라 더 자주 나옴.
-const SCOWL: [(&str, f64); 2] = [
-    (include_str!("../../assets/words/scowl/level10.txt"), 2.0),
-    (include_str!("../../assets/words/scowl/level20.txt"), 1.0),
-];
-
+/// 영어: SCOWL 공개 단어 목록 10단계 = 가장 흔한 단어 (scripts/import_scowl.py 로 생성).
+const SCOWL: [(&str, f64); 1] = [(include_str!("../../assets/words/scowl/level10.txt"), 1.0)];
 /// 한글: 영화 자막 빈도순 목록 (scripts/import_ko_subtitles.py 로 생성, CC BY-SA 4.0).
 const KO_SUBTITLES: &str = include_str!("../../assets/words/ko/subtitles/top.txt");
 const KO_BASIC: &str = include_str!("../../assets/words/ko/basic.txt");
@@ -138,7 +133,7 @@ fn split_lines(text: &str, n: usize) -> (&str, &str) {
 }
 
 impl WordList {
-    /// 영어 단어 목록 (내장 SCOWL 20단계 이하, 10단계 단어가 더 자주 나옴).
+    /// 영어 단어 목록 (내장 SCOWL 10단계, 가장 흔한 단어 약 4천 개).
     pub fn english() -> Self {
         Self::from_sources(Lang::En, &SCOWL)
     }
@@ -230,10 +225,8 @@ mod tests {
     #[test]
     fn builtin_english_is_scowl() {
         let l = WordList::english();
-        assert!(l.words.len() > 10_000, "단어 수: {}", l.words.len());
-        // 10단계(흔한 단어)가 더 큰 가중치.
-        let w = |t: &str| l.words.iter().find(|w| w.text == t).map(|w| w.weight);
-        assert_eq!(w("the"), Some(2.0));
+        assert!(l.words.len() > 3_000, "단어 수: {}", l.words.len());
+        assert!(l.words.iter().any(|w| w.text == "the"));
         assert!(
             l.words
                 .iter()
