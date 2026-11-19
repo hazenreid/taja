@@ -2,6 +2,8 @@
 name = "taja"
 version = "0.1.0"
 edition = "2024"
+description = "Terminal keyboard trainer that unlocks keys one at a time as you reach your target speed and accuracy. Built with Claude Code (Anthropic)."
+readme = "README.md"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
