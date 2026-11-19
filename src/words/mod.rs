@@ -13,25 +13,13 @@ use crate::hangul;
 
 /// 영어: SCOWL 공개 단어 목록 10단계 = 가장 흔한 단어 (scripts/import_scowl.py 로 생성).
 const SCOWL: [(&str, f64); 1] = [(include_str!("../../assets/words/scowl/level10.txt"), 1.0)];
-/// 한글: 영화 자막 빈도순 목록 (scripts/import_ko_subtitles.py 로 생성, CC BY-SA 4.0).
-const KO_SUBTITLES: &str = include_str!("../../assets/words/ko/subtitles/top.txt");
-const KO_BASIC: &str = include_str!("../../assets/words/ko/basic.txt");
-const KO_OTHERS: [&str; 8] = [
-    include_str!("../../assets/words/ko/short.txt"),
-    include_str!("../../assets/words/ko/short2.txt"),
-    include_str!("../../assets/words/ko/nouns.txt"),
-    include_str!("../../assets/words/ko/daily.txt"),
-    include_str!("../../assets/words/ko/themes.txt"),
-    include_str!("../../assets/words/ko/verbs.txt"),
-    include_str!("../../assets/words/ko/verbs2.txt"),
-    include_str!("../../assets/words/ko/adjectives.txt"),
+/// 한글: 국립국어원 「한국어 학습용 어휘 목록」(2003, 공공누리 제1유형) A·B·C등급
+/// (scripts/import_ko_learner.py 로 생성). A가 가장 기초 단어라 더 자주 나옴.
+const KO_LEARNER: [(&str, f64); 3] = [
+    (include_str!("../../assets/words/ko/learner/a.txt"), 3.0),
+    (include_str!("../../assets/words/ko/learner/b.txt"), 1.5),
+    (include_str!("../../assets/words/ko/learner/c.txt"), 1.0),
 ];
-
-/// 단어 묶음별 가중치 (클수록 자주 나옴). 같은 단어는 먼저 나온 묶음의 가중치를 씁니다.
-const COMMON_WEIGHT: f64 = 3.0;
-const OTHER_WEIGHT: f64 = 1.0;
-/// 자막 목록은 한 줄에 15단어. 앞쪽(더 흔한) 줄일수록 가중치가 큼.
-const KO_SUBTITLE_TIERS: [(usize, f64); 3] = [(130, 2.5), (330, 1.2), (usize::MAX, 0.6)];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
@@ -123,33 +111,15 @@ pub fn char_width(c: char) -> usize {
     if hangul::is_hangul_input(c) { 2 } else { 1 }
 }
 
-/// 앞에서 `n`줄과 나머지로 나눕니다.
-fn split_lines(text: &str, n: usize) -> (&str, &str) {
-    match text.match_indices('\n').nth(n.saturating_sub(1)) {
-        Some((i, _)) if n > 0 => text.split_at(i + 1),
-        _ if n == 0 => ("", text),
-        _ => (text, ""),
-    }
-}
-
 impl WordList {
     /// 영어 단어 목록 (내장 SCOWL 10단계, 가장 흔한 단어 약 4천 개).
     pub fn english() -> Self {
         Self::from_sources(Lang::En, &SCOWL)
     }
 
+    /// 한글 단어 목록 (내장 한국어 학습용 어휘 A·B·C등급, 약 5,500개).
     pub fn korean() -> Self {
-        let mut sources = vec![(KO_BASIC, COMMON_WEIGHT)];
-        let mut rest = KO_SUBTITLES;
-        let mut done = 0;
-        for (until, weight) in KO_SUBTITLE_TIERS {
-            let (head, tail) = split_lines(rest, until.saturating_sub(done));
-            sources.push((head, weight));
-            done = until;
-            rest = tail;
-        }
-        sources.extend(KO_OTHERS.iter().map(|&t| (t, OTHER_WEIGHT)));
-        Self::from_sources(Lang::Ko, &sources)
+        Self::from_sources(Lang::Ko, &KO_LEARNER)
     }
 
     /// 각 원본 텍스트를 공백으로 나눠 읽습니다. 중복은 처음 나온 것만 남깁니다.
@@ -235,16 +205,8 @@ mod tests {
     }
 
     #[test]
-    fn splits_lines() {
-        assert_eq!(split_lines("a\nb\nc\n", 2), ("a\nb\n", "c\n"));
-        assert_eq!(split_lines("a\nb\n", 5), ("a\nb\n", ""));
-        assert_eq!(split_lines("a\n", 0), ("", "a\n"));
-    }
-
-    #[test]
     fn korean_words_are_hangul_syllables() {
-        let sources = std::iter::once(KO_SUBTITLES).chain([KO_BASIC]).chain(KO_OTHERS);
-        for text in sources {
+        for (text, _) in KO_LEARNER {
             let tokens = text
                 .lines()
                 .filter(|l| !l.trim_start().starts_with('#'))
@@ -254,10 +216,10 @@ mod tests {
             }
         }
         let l = WordList::korean();
-        assert!(l.words.len() >= 10_000, "한글 단어 수: {}", l.words.len());
+        assert!(l.words.len() > 5_000, "한글 단어 수: {}", l.words.len());
         let hakgyo = l.words.iter().find(|w| w.text == "학교").unwrap();
         assert_eq!(hakgyo.keys, "gkrry");
-        // 자막 목록 맨 앞 단어가 가장 큰 가중치.
-        assert_eq!(l.words.iter().find(|w| w.text == "내가").unwrap().weight, 2.5);
+        // A등급(가장 기초) 단어가 가장 큰 가중치.
+        assert_eq!(hakgyo.weight, 3.0);
     }
 }

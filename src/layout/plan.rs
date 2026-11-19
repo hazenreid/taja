@@ -278,9 +278,15 @@ mod tests {
         assert_eq!(plan.order.len(), 26 + 7);
         let start = &plan.order[..plan.start_len];
         assert!((MIN_START..=MAX_START + 1).contains(&start.len()), "{start:?}");
-        // ㅆ(T)은 아주 흔해서 Shift 키 중 가장 먼저 열립니다.
-        let first_shift = plan.order.iter().find(|c| c.is_ascii_uppercase());
-        assert_eq!(first_shift, Some(&'T'), "{:?}", plan.order);
+        // Shift 키(ㄲ ㄸ ㅃ ㅆ ㅉ ㅒ ㅖ) 7개가 모두 순서에 들어 있음.
+        let mut shifts: Vec<char> = plan
+            .order
+            .iter()
+            .copied()
+            .filter(char::is_ascii_uppercase)
+            .collect();
+        shifts.sort();
+        assert_eq!(shifts, ['E', 'O', 'P', 'Q', 'R', 'T', 'W'], "{:?}", plan.order);
     }
 
     #[test]
