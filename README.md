@@ -50,17 +50,17 @@ zxcvbnm,./
 저장소에 있는 예시: `layouts/mine.txt`
 
 ```
-.blyx.foup
-manijzreht
-cgkdq.s.vw
+pmdyq.bru.
+cthezxsial
+vgfoj.n.kw
 ```
 
 ```sh
 cargo run --release -- --layout layouts/mine.txt
 ```
 
-이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t r h` (4개) → `a s i n o c d l u m g p v b w f y k j x q z`
-(영어 상위 트라이그램 중 `the`, `and`, `ing`, `ter`, `her`, `ver`가 이 배열에서는 롤)
+이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t r h` (4개) → `a s i n o c l d u m g p v b w f y k j x q z`
+(영어 상위 트라이그램 중 `the`, `was`, `nal`, `ain`, `lan`, `lin`이 이 배열에서는 롤)
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -82,7 +82,7 @@ cargo run --release -- --layout layouts/mine.txt
   - 언락 순서는 진도를 처음 만들 때 계산함. `corpus.bin`을 바꾼 뒤에는 `--reset`으로 새로 시작해야 반영됨
   - 결과 예 (단어는 내장 SCOWL, 순서는 저장소의 `assets/corpus.bin` 기준):
     - QWERTY: `ethr` → `a s i n o c l d u m g p v b f w y k x j q z`
-    - `layouts/mine.txt`: `ethr` → `a s i n o c d l u m g p v b w f y k j x q z`
+    - `layouts/mine.txt`: `ethr` → `a s i n o c l d u m g p v b w f y k j x q z`
     - 자리를 안 따지므로 레이아웃이 순서에 주는 영향은 롤 가산뿐이라 차이가 작음
 
 ### corpus.bin 위치
@@ -193,7 +193,7 @@ cargo test
 - 진짜 단어가 모자랄 때만 열린 자모로 만든 음절(홑모음만, 받침은 ㄱ ㄴ ㄹ ㅁ ㅂ ㅅ ㅆ ㅇ만)로 채웁니다.
 - 속도는 분당 타수(KPM, keystrokes per minute)로 표시합니다. 진도는 영어와 따로 저장됩니다 (`<레이아웃>-ko.json`).
 - 계산 결과 (학습용 어휘 빈도 기준):
-  - `layouts/mine.txt`: `ㅏ ㅇ ㄷ ㅎ`(k d e g) → `ㅣ ㅗ ㄱ ㄹ ㄴ ㅅ ㅓ ㅈ ㅜ ㅁ ㅂ ㅡ …`
+  - `layouts/mine.txt`: `ㅏ ㄷ ㄴ ㅎ`(k e s g) → `ㅇ ㅣ ㅗ ㄱ ㄹ ㅅ ㅓ ㅈ ㅜ ㅁ ㅂ ㅡ …`
   - QWERTY: `ㅏ ㄷ ㄴ ㅎ`(k e s g) → `ㅇ ㅣ ㅗ ㄱ ㄹ ㅅ ㅓ ㅈ ㅜ ㅁ ㅂ ㅡ …`
   - 단어가 사전 기본형이라 `-다`, `-하다`에 쓰는 `ㅏ ㄷ ㅎ`이 시작 키에 들어감. Shift 키는 `ㄲ`이 가장 먼저
 
