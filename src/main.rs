@@ -35,11 +35,15 @@ enum LangArg {
 
 /// Terminal keyboard trainer: start with a few home-row keys and unlock the next key
 /// once every open key reaches the target speed and accuracy.
+/// 기본 레이아웃: 저장소의 layouts/mine.txt (빌드할 때 저장소 경로가 들어감).
+const DEFAULT_LAYOUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/layouts/mine.txt");
+
 #[derive(Parser)]
 #[command(version)]
 struct Args {
-    /// Layout name (<name>.txt in the layouts folder) or a file path
-    #[arg(short, long, default_value = "qwerty")]
+    /// Layout: "qwerty", a name (<name>.txt in the layouts folder) or a file path
+    /// [default: layouts/mine.txt in the taja source folder]
+    #[arg(short, long, default_value = DEFAULT_LAYOUT, hide_default_value = true)]
     layout: String,
 
     /// Language to practice
