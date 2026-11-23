@@ -51,14 +51,14 @@ zxcvbnm,./
 **기본 레이아웃: 저장소의 `layouts/mine.txt`** (`--layout`을 안 주면 이 파일을 씀. 빌드할 때 저장소 경로가 들어감)
 
 ```
-pmdyq.bruj
-cthezxsial
-vgfo..n.kw
+plou.qbdfk
+cthe.x.snr
+wgja.zivmy
 ```
 
-이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t r h` (4개) → `a s i n o c l d u m g p v b w f y k j x q z`
-(영어 상위 트라이그램 중 `the`, `was`, `nal`, `ain`, `lan`, `lin`이 이 배열에서는 롤.
-원래 배열의 Esc, `,` 자리는 글자가 아니라서 `.`(빈 칸)으로 적음)
+이 배열의 계산 결과 (assets/corpus.bin 기준): 시작 키 `e t r h` (4개) → `a i s n o c d l u m g p v b f w y k j x q z`
+(영어 상위 트라이그램 중 `the`, `tha`, `cha`, `pla`가 이 배열에서는 롤.
+원래 배열의 Esc, 스페이스 자리는 글자가 아니라서 `.`(빈 칸)으로 적음)
 레이아웃은 OS나 키보드 펌웨어에 설치된 상태여야 합니다. 프로그램은 들어온 글자를 그대로 비교합니다.
 
 나머지는 모두 위치로 자동 계산합니다:
@@ -80,7 +80,7 @@ vgfo..n.kw
   - 언락 순서는 진도를 처음 만들 때 계산함. `corpus.bin`을 바꾼 뒤에는 `--reset`으로 새로 시작해야 반영됨
   - 결과 예 (단어는 내장 SCOWL, 순서는 저장소의 `assets/corpus.bin` 기준):
     - QWERTY: `ethr` → `a s i n o c l d u m g p v b f w y k x j q z`
-    - `layouts/mine.txt`: `ethr` → `a s i n o c l d u m g p v b w f y k j x q z`
+    - `layouts/mine.txt`: `ethr` → `a i s n o c d l u m g p v b f w y k j x q z`
     - 자리를 안 따지므로 레이아웃이 순서에 주는 영향은 롤 가산뿐이라 차이가 작음
 
 ### corpus.bin 위치
