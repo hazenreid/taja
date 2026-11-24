@@ -18,6 +18,10 @@ const FREQ_SHARE: f64 = 0.1;
 const ROLL_BONUS: f64 = 1.5;
 /// Shift를 같이 눌러야 하는 키는 이만큼 더 어렵다고 봅니다.
 const SHIFT_COST: f64 = 1.5;
+/// 단계마다 목표로 삼는 트라이그램 수.
+pub const GOALS_PER_STAGE: usize = 5;
+/// 목표 트라이그램은 열린 키로 칠 수 있는 진짜 단어 이만큼 이상에 나오는 것을 먼저 고릅니다.
+const MIN_GOAL_WORDS: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
@@ -99,6 +103,50 @@ pub fn start_keys(layout: &Layout, words: &WordList, ngrams: &Ngrams) -> Vec<cha
     let freq = |c: &char| ngrams.letters.get(c).copied().unwrap_or(0.0);
     start.sort_by(|a, b| freq(b).total_cmp(&freq(a)));
     start
+}
+
+/// 이번 단계의 목표 트라이그램 (빈도순, 최대 GOALS_PER_STAGE개).
+///
+/// 후보: 띄어쓰기 없이 열린 키로만 되어 있고, 이번 단계에 새로 열린 키가 들어간 트라이그램 중
+/// 열린 키로 칠 수 있는 진짜 단어에 하나라도 나오는 것. 진짜 단어 MIN_GOAL_WORDS개 이상에
+/// 나오는 것을 빈도순으로 먼저 고르고, 모자라면 단어가 더 적은 것으로 채웁니다.
+/// 후보가 하나도 없으면 빈 목록 (그 단계는 새 키 자체가 목표를 넘으면 통과).
+pub fn stage_goals(
+    words: &WordList,
+    ngrams: &Ngrams,
+    unlocked: &[char],
+    new_keys: &[char],
+) -> Vec<[char; 3]> {
+    let available = words.available(mask_of(unlocked.iter().copied()));
+    // (빈도 순위, 트라이그램, 든 단어 수 (MIN_GOAL_WORDS에서 셈을 멈춤))
+    let mut found: Vec<(usize, [char; 3], usize)> = Vec::new();
+    let mut well_covered = 0;
+    for (rank, &(tri, _)) in ngrams.trigrams.iter().enumerate() {
+        if well_covered >= GOALS_PER_STAGE {
+            break;
+        }
+        if tri.contains(&SPACE)
+            || !tri.iter().all(|c| unlocked.contains(c))
+            || !tri.iter().any(|c| new_keys.contains(c))
+        {
+            continue;
+        }
+        let pat: String = tri.iter().collect();
+        let n = available
+            .iter()
+            .filter(|w| w.keys.contains(&pat))
+            .take(MIN_GOAL_WORDS)
+            .count();
+        if n > 0 {
+            well_covered += (n >= MIN_GOAL_WORDS) as usize;
+            found.push((rank, tri, n));
+        }
+    }
+    // 단어가 많은 것 먼저 (MIN_GOAL_WORDS개 이상은 같게 봄), 같으면 빈도순. 고른 뒤에는 빈도순.
+    found.sort_by_key(|&(rank, _, n)| (std::cmp::Reverse(n), rank));
+    found.truncate(GOALS_PER_STAGE);
+    found.sort_by_key(|&(rank, _, _)| rank);
+    found.into_iter().map(|(_, t, _)| t).collect()
 }
 
 /// 단어 목록의 빈도로 트라이그램을 세서 계산합니다 (테스트용 줄임).
@@ -317,5 +365,68 @@ mod tests {
         assert_eq!(&plan.order[..plan.start_len], &start[..]);
         assert!(start.contains(&'h') && start.contains(&'a'), "{start:?}");
         assert_eq!(plan.order.len(), 26);
+    }
+
+    #[test]
+    fn every_stage_gets_goal_trigrams_with_the_new_key() {
+        for (layout, words) in [
+            (Layout::qwerty(), WordList::english()),
+            (Layout::qwerty(), WordList::korean()),
+        ] {
+            let ngrams = Ngrams::from_words(&words);
+            let plan = make_plan_with(&layout, &words, &ngrams);
+            for n in plan.start_len..=plan.order.len() {
+                let unlocked = &plan.order[..n];
+                let new: Vec<char> = if n == plan.start_len {
+                    unlocked.to_vec()
+                } else {
+                    vec![plan.order[n - 1]]
+                };
+                let goals = stage_goals(&words, &ngrams, unlocked, &new);
+                assert!((1..=GOALS_PER_STAGE).contains(&goals.len()), "{n}: {goals:?}");
+                let available = words.available(mask_of(unlocked.iter().copied()));
+                for g in &goals {
+                    assert!(!g.contains(&SPACE), "{g:?}");
+                    assert!(g.iter().all(|c| unlocked.contains(c)), "{g:?}");
+                    assert!(g.iter().any(|c| new.contains(c)), "{g:?} {new:?}");
+                    let pat: String = g.iter().collect();
+                    assert!(available.iter().any(|w| w.keys.contains(&pat)), "{pat}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stage_goals_prefer_trigrams_found_in_more_words() {
+        use crate::corpus::tests::encode;
+        use crate::words::Lang;
+        let words = WordList::from_sources(Lang::En, &[("tea eat heat seat meat ate hate", 1.0)]);
+        let tri = |s: &str, n| -> ([char; 3], u64) {
+            let c: Vec<char> = s.chars().collect();
+            ([c[0], c[1], c[2]], n)
+        };
+        // 단어 수: eat 4, ate 2, 나머지 1. zza는 잠긴 키, the는 새 키(a)가 없음.
+        let ngrams = Ngrams::parse_corpus(&encode(
+            &[],
+            &[],
+            &[
+                tri("zza", 9000),
+                tri("the", 5000),
+                tri("tea", 1000),
+                tri("eat", 500),
+                tri("hea", 400),
+                tri("sea", 200),
+                tri("mea", 100),
+                tri("ate", 50),
+            ],
+        ))
+        .unwrap();
+        let unlocked: Vec<char> = "etahsm".chars().collect();
+        let goals: Vec<String> = stage_goals(&words, &ngrams, &unlocked, &['a'])
+            .iter()
+            .map(|g| g.iter().collect())
+            .collect();
+        // 단어가 많은 eat, ate를 먼저 넣고, 나머지는 빈도순으로 채움 (mea는 빠짐). 결과는 빈도순.
+        assert_eq!(goals, ["tea", "eat", "hea", "sea", "ate"]);
     }
 }

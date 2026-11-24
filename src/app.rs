@@ -7,9 +7,11 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::corpus::Ngrams;
 use crate::hangul;
 use crate::layout::Layout;
 use crate::layout::cost::{finger_name, row_name};
+use crate::layout::plan::stage_goals;
 use crate::lesson::{Lesson, Outcome};
 use crate::progress::{LineRecord, Profile, Targets};
 use crate::storage::save_profile;
@@ -25,6 +27,8 @@ const IME_WARNING: &str = "Switch your OS input to English (Han/Yeong key) - taj
 pub struct App {
     pub layout: Layout,
     pub words: WordList,
+    /// 트라이그램 빈도 (단계마다 목표 트라이그램을 고를 때 씀).
+    ngrams: Ngrams,
     pub profile: Profile,
     pub targets: Targets,
     pub target: Target,
@@ -35,6 +39,8 @@ pub struct App {
     pub save_error: Option<String>,
     pub line_width: usize,
     pub quit: bool,
+    /// 이 줄을 시작할 때 이미 통과해 있던 목표 트라이그램 (줄을 마치면 새로 통과한 것을 알려 줌).
+    passed_at_start: Vec<[char; 3]>,
     rng: StdRng,
 }
 
@@ -42,6 +48,7 @@ impl App {
     pub fn new(
         layout: Layout,
         words: WordList,
+        ngrams: Ngrams,
         profile: Profile,
         targets: Targets,
         save_path: PathBuf,
@@ -50,6 +57,7 @@ impl App {
         let mut app = App {
             layout,
             words,
+            ngrams,
             profile,
             targets,
             target: Target::default(),
@@ -60,10 +68,55 @@ impl App {
             save_error: None,
             line_width: MAX_LINE,
             quit: false,
+            passed_at_start: Vec::new(),
             rng: StdRng::from_os_rng(),
         };
+        app.ensure_goals();
         app.regenerate();
         app
+    }
+
+    /// 이번 단계의 목표 트라이그램이 아직 없으면 정합니다 (새 키가 열렸을 때, 예전 진도 파일).
+    fn ensure_goals(&mut self) {
+        if self.profile.goals.is_empty() {
+            let unlocked = self.profile.unlocked_keys().to_vec();
+            let new_keys = self.profile.stage_new_keys();
+            self.profile.goals = stage_goals(&self.words, &self.ngrams, &unlocked, &new_keys);
+        }
+    }
+
+    /// 아직 목표를 못 넘은 목표 트라이그램 (가장 연습이 필요한 것이 앞).
+    pub fn pending_goals(&self) -> Vec<[char; 3]> {
+        self.profile
+            .goals_by_need(self.targets)
+            .into_iter()
+            .filter(|&g| !self.profile.goal_mastered(g, self.targets))
+            .collect()
+    }
+
+    fn passed_goals(&self) -> Vec<[char; 3]> {
+        self.profile
+            .goals
+            .iter()
+            .copied()
+            .filter(|&g| self.profile.goal_mastered(g, self.targets))
+            .collect()
+    }
+
+    /// 지금 연습할 키 순서들: 못 넘은 목표 트라이그램 (가장 약한 것이 앞),
+    /// 모두 넘었으면 집중 키 하나.
+    pub fn patterns(&self) -> Vec<String> {
+        let goals = self.pending_goals();
+        if goals.is_empty() {
+            self.focus().map(|k| vec![k.to_string()]).unwrap_or_default()
+        } else {
+            goals.iter().map(|g| g.iter().collect()).collect()
+        }
+    }
+
+    /// 키 순서를 화면에 보일 글자로 (한글이면 자모): `her`, `ㅎㅏㄷ`.
+    pub fn pattern_label(&self, keys: &str) -> String {
+        keys.chars().map(|k| self.label(k)).collect()
     }
 
     pub fn lang(&self) -> Lang {
@@ -75,7 +128,7 @@ impl App {
     }
 
     fn make_line(&mut self) -> Target {
-        let focus = self.focus();
+        let patterns = self.patterns();
         let keys = self.profile.unlocked_keys().to_vec();
         let weak: Vec<([char; 2], f64)> = self
             .profile
@@ -87,7 +140,7 @@ impl App {
             &mut self.rng,
             &self.words,
             &keys,
-            focus,
+            &patterns,
             &self.profile.missed,
             &weak,
             self.line_width,
@@ -97,6 +150,7 @@ impl App {
     fn start(&mut self, target: Target) {
         self.lesson = Lesson::new(&target.keys.iter().collect::<String>());
         self.target = target;
+        self.passed_at_start = self.passed_goals();
     }
 
     /// 줄을 새로 만듭니다.
@@ -134,6 +188,10 @@ impl App {
             self.profile.record(ch, sample);
             // 앞 키 → 이 키 연결이 약한지 기록 (틀렸으면 점수 올림, 한 번에 맞히면 깎음).
             self.profile.record_pair(prev, ch, sample.clean);
+            // 방금 끝난 트라이그램이 목표 트라이그램이면 기록.
+            if let Some((tri, s)) = self.lesson.trigram_at(self.lesson.pos - 1) {
+                self.profile.record_trigram(tri, s);
+            }
             if self.lesson.is_done() {
                 self.finish_line(now);
             }
@@ -160,11 +218,41 @@ impl App {
             unlocked: self.profile.unlocked,
         });
 
-        self.message = self
-            .profile
-            .try_unlock(self.targets)
-            .map(|k| format!("New key unlocked: {}", self.describe_key(k)));
-        // 방금 틀린 단어와 새 집중 키가 바로 반영되도록 다음 줄은 지금 만듭니다.
+        let newly_passed: Vec<[char; 3]> = self
+            .passed_goals()
+            .into_iter()
+            .filter(|g| !self.passed_at_start.contains(g))
+            .collect();
+        self.message = match self.profile.try_unlock(self.targets) {
+            Some(k) => {
+                self.ensure_goals();
+                let goals: Vec<String> = self
+                    .profile
+                    .goals
+                    .iter()
+                    .map(|g| self.pattern_label(&g.iter().collect::<String>()))
+                    .collect();
+                let mut msg = format!("New key unlocked: {}", self.describe_key(k));
+                if !goals.is_empty() {
+                    msg += &format!(" · next goals: {}", goals.join(" "));
+                }
+                Some(msg)
+            }
+            None if !newly_passed.is_empty() => {
+                let names: Vec<String> = newly_passed
+                    .iter()
+                    .map(|g| format!("'{}'", self.pattern_label(&g.iter().collect::<String>())))
+                    .collect();
+                Some(format!(
+                    "Goal passed: {} ({}/{})",
+                    names.join(" "),
+                    self.passed_goals().len(),
+                    self.profile.goals.len()
+                ))
+            }
+            None => None,
+        };
+        // 방금 틀린 단어와 새 목표가 바로 반영되도록 다음 줄은 지금 만듭니다.
         self.regenerate();
         self.save();
     }
@@ -206,19 +294,20 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::plan::make_plan;
+    use crate::layout::plan::make_plan_with;
     use std::time::Duration;
 
     fn app_for(words: WordList, name: &str) -> (App, PathBuf) {
         let layout = Layout::qwerty();
-        let profile = Profile::new(&layout, &make_plan(&layout, &words));
+        let ngrams = Ngrams::from_words(&words);
+        let profile = Profile::new(&layout, &make_plan_with(&layout, &words, &ngrams));
         let dir = std::env::temp_dir().join(format!("taja-app-{name}-{}", std::process::id()));
         let targets = Targets {
             wpm: 25.0,
             accuracy: 0.95,
         };
         (
-            App::new(layout, words, profile, targets, dir.join("p.json"), None),
+            App::new(layout, words, ngrams, profile, targets, dir.join("p.json"), None),
             dir,
         )
     }
@@ -297,13 +386,13 @@ mod tests {
         assert_eq!(missed, real);
         assert!(app.profile.missed.iter().all(|m| m.real));
 
-        // 다음 줄들에는 집중 키가 든 틀린 단어가 다시 나와야 합니다.
-        let focus = app.focus().unwrap();
+        // 다음 줄들에는 연습 중인 키 순서가 든 틀린 단어가 다시 나와야 합니다.
+        let patterns = app.patterns();
         let with_focus: Vec<String> = app
             .profile
             .missed
             .iter()
-            .filter(|m| m.keys.contains(focus))
+            .filter(|m| patterns.iter().any(|p| m.keys.contains(p.as_str())))
             .map(|m| m.text.clone())
             .collect();
         if !with_focus.is_empty() {
@@ -315,6 +404,68 @@ mod tests {
             assert!(seen, "틀린 단어가 다시 안 나옴: {with_focus:?}");
         }
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn goal_trigrams_shape_lines_and_gate_unlocks() {
+        for words in [WordList::english(), WordList::korean()] {
+            let lang = words.lang.name();
+            let (mut app, dir) = app_for(words, &format!("goals-{lang}"));
+            let goals = app.profile.goals.clone();
+            assert!(!goals.is_empty() && goals.len() <= 5, "{lang}: {goals:?}");
+            // 줄의 모든 단어에 아직 못 넘은 목표 트라이그램이 하나 이상 들어 있음.
+            for _ in 0..20 {
+                app.regenerate();
+                let patterns = app.patterns();
+                for w in &app.target.words {
+                    let keys = &w.item.keys;
+                    assert!(
+                        patterns.iter().any(|p| keys.contains(p.as_str())),
+                        "{lang}: {keys} {patterns:?}"
+                    );
+                }
+            }
+            type_until_unlock(&mut app);
+            // 목표를 모두 넘어서 열렸고, 새 단계의 목표에는 새 키가 들어 있음.
+            assert!(
+                goals.iter().all(|&g| app.profile.goal_mastered(g, app.targets)),
+                "{lang}"
+            );
+            let new_key = *app.profile.unlocked_keys().last().unwrap();
+            assert!(!app.profile.goals.is_empty(), "{lang}");
+            assert!(
+                app.profile.goals.iter().all(|g| g.contains(&new_key)),
+                "{lang}: {:?}",
+                app.profile.goals
+            );
+            assert!(
+                app.message.as_deref().unwrap().contains("next goals"),
+                "{:?}",
+                app.message
+            );
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn passing_a_goal_shows_a_message() {
+        let (mut app, dir) = app_for(WordList::english(), "passed");
+        let mut now = Instant::now();
+        for _ in 0..100 {
+            for c in app.target.keys.clone() {
+                now += Duration::from_millis(150);
+                app.type_char(c, now);
+            }
+            if app
+                .message
+                .as_deref()
+                .is_some_and(|m| m.starts_with("Goal passed"))
+            {
+                let _ = std::fs::remove_dir_all(dir);
+                return;
+            }
+        }
+        panic!("no 'Goal passed' message: {:?}", app.message);
     }
 
     #[test]

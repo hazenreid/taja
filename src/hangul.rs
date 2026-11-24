@@ -165,6 +165,53 @@ pub fn make_syllable(cho: usize, jung: usize, jong: usize) -> char {
     compose(cho, jung, jong)
 }
 
+/// 음절의 종성 번호 (0 = 받침 없음).
+pub fn jong_of(c: char) -> Option<usize> {
+    split(c).map(|p| p.2)
+}
+
+/// 모음 키인지 (겹모음이 아닌 모음 하나).
+fn is_vowel_key(c: char) -> bool {
+    JUNG_KEYS.iter().any(|j| j.len() == 1 && j.starts_with(c))
+}
+
+/// 두벌식 키 순서를 입력기처럼 음절로 조합합니다. 모든 음절이 초성 + 중성(+ 종성)으로
+/// 완성되지 않으면 None (예: 모음으로 시작, 모음 두 개가 겹모음이 안 됨, 받침이 될 수 없는 ㄸ).
+/// 자음 다음에 모음이 오면 그 자음은 다음 음절의 초성이 됩니다 (`dlTdj` → 있어).
+pub fn compose_keys(keys: &str) -> Option<String> {
+    let k: Vec<char> = keys.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < k.len() {
+        let cho = cho_with_keys(&k[i].to_string())?;
+        i += 1;
+        if !k.get(i).is_some_and(|&c| is_vowel_key(c)) {
+            return None;
+        }
+        let mut jung = jung_with_keys(&k[i].to_string())?;
+        i += 1;
+        if let Some(&c) = k.get(i).filter(|&&c| is_vowel_key(c)) {
+            jung = jung_with_keys(&format!("{}{c}", k[i - 1]))?;
+            i += 1;
+        }
+        // 다음 모음 전까지의 자음: 모음이 뒤따르면 마지막 하나는 다음 음절의 초성.
+        let start = i;
+        while k.get(i).is_some_and(|&c| !is_vowel_key(c)) {
+            i += 1;
+        }
+        let jong_len = if i < k.len() {
+            (i - start).checked_sub(1)?
+        } else {
+            i - start
+        };
+        let jong_keys: String = k[start..start + jong_len].iter().collect();
+        let jong = JONG_KEYS.iter().position(|j| *j == jong_keys)?;
+        out.push(compose(cho, jung, jong));
+        i = start + jong_len;
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +253,31 @@ mod tests {
             assert!(key_jamo(c).is_some(), "{c}");
         }
         assert_eq!(key_jamo('A'), None);
+    }
+
+    #[test]
+    fn compose_keys_like_an_ime() {
+        assert_eq!(compose_keys("gkrry").as_deref(), Some("학교"));
+        assert_eq!(compose_keys("dlTdj").as_deref(), Some("있어"));
+        assert_eq!(compose_keys("ekfrdl").as_deref(), Some("닭이"));
+        assert_eq!(compose_keys("dmltk").as_deref(), Some("의사"));
+        assert_eq!(compose_keys("rhkdlf").as_deref(), Some("과일"));
+        assert_eq!(compose_keys("kr"), None); // 모음으로 시작
+        assert_eq!(compose_keys("rkk"), None); // ㅏ 다음 ㅏ
+        assert_eq!(compose_keys("rkE"), None); // ㄸ은 받침이 안 됨
+        assert_eq!(compose_keys("r"), None); // 모음 없음
+    }
+
+    #[test]
+    fn compose_keys_inverts_word_keys() {
+        for w in &crate::words::WordList::korean().words {
+            assert_eq!(
+                compose_keys(&w.keys).as_deref(),
+                Some(w.text.as_str()),
+                "{}",
+                w.keys
+            );
+        }
     }
 
     #[test]

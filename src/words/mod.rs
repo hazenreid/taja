@@ -74,12 +74,6 @@ pub struct Word {
     pub weight: f64,
 }
 
-impl Word {
-    pub fn uses(&self, key: char) -> bool {
-        self.keys.contains(key)
-    }
-}
-
 pub struct WordList {
     pub lang: Lang,
     pub words: Vec<Word>,

@@ -3,9 +3,11 @@
 //! 영어는 사용자가 만든 `corpus.bin`에서 읽고, 한글은 내장 단어 목록의 빈도로 계산합니다.
 //!
 //! `corpus.bin` 형식: `CorpusStats { letters, bigrams, trigrams }`를 bincode 1 기본 설정
-//! (리틀엔디언, 고정 길이 정수)으로 직렬화한 것. 헤더 없이 맵 세 개가 차례로 들어 있습니다.
+//! (리틀엔디언, 고정 길이 정수)으로 직렬화한 것. 맵 세 개가 차례로 들어 있고, 새 형식은 앞에
+//! 머리말이 붙습니다 (머리말이 없는 예전 파일도 읽음).
 //!
 //! ```text
+//! "P2ANUT-CORPUS\0" + u32 버전(1) + u32     ← 머리말 (새 형식만; 마지막 u32는 쓰지 않음)
 //! [u64 개수] + (char, u64) × 개수                ← letters
 //! [u64 개수] + (char, char, u64) × 개수          ← bigrams
 //! [u64 개수] + (char, char, char, u64) × 개수    ← trigrams
@@ -21,6 +23,10 @@ pub const DEFAULT_CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/co
 
 /// 단어 경계(공백). 공백은 항상 칠 수 있는 키로 봅니다.
 pub const SPACE: char = ' ';
+
+/// 새 형식 corpus.bin의 머리말과, 읽을 수 있는 버전.
+const MAGIC: &[u8] = b"P2ANUT-CORPUS\0";
+const VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Ngrams {
@@ -48,6 +54,10 @@ impl Reader<'_> {
 
     fn u64(&mut self) -> Result<u64, String> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+
+    fn u32(&mut self) -> Result<u32, String> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
 
     fn char(&mut self) -> Result<char, String> {
@@ -91,6 +101,16 @@ impl Ngrams {
     /// `corpus.bin` 내용을 읽습니다. 영어는 소문자로 바꾸고, 글자와 공백이 아닌 것은 버립니다.
     pub fn parse_corpus(bytes: &[u8]) -> Result<Self, String> {
         let mut r = Reader { bytes, pos: 0 };
+        if bytes.starts_with(MAGIC) {
+            r.pos = MAGIC.len();
+            let version = r.u32()?;
+            if version != VERSION {
+                return Err(format!(
+                    "unsupported corpus version {version} (expected {VERSION})"
+                ));
+            }
+            r.u32()?;
+        }
         let letters = r.map::<1>()?;
         let _bigrams = r.map::<2>()?;
         let trigrams = r.map::<3>()?;
@@ -193,6 +213,34 @@ pub mod tests {
         assert_eq!(n.letters[&'t'], 9.0);
         assert_eq!(n.letters[&' '], 20.0);
         assert_eq!(n.trigrams, vec![([' ', 't', 'h'], 4.0), (['t', 'h', 'e'], 3.0)]);
+    }
+
+    /// 새 형식: 머리말 + 같은 내용.
+    pub fn encode_with_header(
+        version: u32,
+        letters: &[(char, u64)],
+        bigrams: &[([char; 2], u64)],
+        trigrams: &[([char; 3], u64)],
+    ) -> Vec<u8> {
+        let mut out = MAGIC.to_vec();
+        out.extend_from_slice(&version.to_le_bytes());
+        out.extend_from_slice(&6u32.to_le_bytes());
+        out.extend(encode(letters, bigrams, trigrams));
+        out
+    }
+
+    #[test]
+    fn reads_files_with_header() {
+        let args = (
+            &[('t', 9), (' ', 20)][..],
+            &[(['t', 'h'], 5)][..],
+            &[([' ', 't', 'h'], 4), (['t', 'h', 'e'], 3)][..],
+        );
+        let plain = Ngrams::parse_corpus(&encode(args.0, args.1, args.2)).unwrap();
+        let with_header = Ngrams::parse_corpus(&encode_with_header(1, args.0, args.1, args.2)).unwrap();
+        assert_eq!(plain, with_header);
+        let err = Ngrams::parse_corpus(&encode_with_header(2, args.0, args.1, args.2)).unwrap_err();
+        assert!(err.contains("version 2"), "{err}");
     }
 
     #[test]
