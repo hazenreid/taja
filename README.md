@@ -15,8 +15,11 @@ cargo run --release                     # 기본 레이아웃 (저장소의 layo
 cargo run --release -- --layout qwerty  # QWERTY
 cargo run --release -- --layout mine    # 레이아웃 폴더의 mine.txt
 cargo run --release -- --lang ko        # 한글 (두벌식)
+cargo run --release -- --reset          # 진도를 지우고 처음부터 (한글은 --lang ko --reset)
 cargo run --release -- --help           # 옵션 보기
 ```
+
+`cargo run` 뒤에 옵션을 줄 때는 `--` 다음에 적어야 합니다 (`--` 앞은 cargo 옵션).
 
 | 키 | 동작 |
 |---|---|
