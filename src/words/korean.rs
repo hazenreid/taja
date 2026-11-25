@@ -41,44 +41,6 @@ pub fn generate(rng: &mut impl Rng, allowed: &[char], focus: Option<char>) -> Op
     }
 }
 
-/// 키 순서 `pattern`이 그대로 들어간 가짜 단어 (화면 글자, 누를 키). 앞뒤에 열린 키를 0~2개씩
-/// 붙여 보면서 올바른 음절로 조합되는 것을 찾습니다. 못 찾으면 None.
-pub fn generate_with_pattern(
-    rng: &mut impl Rng,
-    allowed: &[char],
-    pattern: &str,
-) -> Option<(String, String)> {
-    if allowed.is_empty() || !pattern.chars().all(|c| allowed.contains(&c)) {
-        return None;
-    }
-    let random_keys = |rng: &mut _| -> String {
-        let n = rand::Rng::random_range(rng, 0..=2);
-        (0..n)
-            .map(|_| allowed[rand::Rng::random_range(rng, 0..allowed.len())])
-            .collect()
-    };
-    // 받침이 흔한 것(없음, ㄱ ㄴ ㄹ ㅁ ㅂ ㅅ ㅆ ㅇ)만 있는 단어를 먼저 찾고, 없으면 처음 찾은 단어.
-    let natural = |text: &str| {
-        text.chars()
-            .all(|c| hangul::jong_of(c).is_some_and(|j| j == 0 || COMMON_JONG.contains(&j)))
-    };
-    let mut fallback = None;
-    for _ in 0..300 {
-        let keys = format!("{}{pattern}{}", random_keys(rng), random_keys(rng));
-        let Some(text) = hangul::compose_keys(&keys) else {
-            continue;
-        };
-        if BLOCKED.iter().any(|b| text.contains(b)) {
-            continue;
-        }
-        if natural(&text) {
-            return Some((text, keys));
-        }
-        fallback.get_or_insert((text, keys));
-    }
-    fallback
-}
-
 /// 집중 키를 초성(자음) 또는 중성(모음)으로 쓰는 음절 하나.
 fn with_key(rng: &mut impl Rng, p: &Parts, key: char) -> Option<(String, String)> {
     let one = key.to_string();
@@ -139,29 +101,6 @@ mod tests {
             assert!(keys.chars().all(|k| allowed.contains(&k)), "{text} {keys}");
             assert!(keys.contains('s'), "{text} {keys}");
         }
-    }
-
-    #[test]
-    fn pattern_words_contain_the_pattern() {
-        let mut rng = StdRng::seed_from_u64(3);
-        let allowed: Vec<char> = "dkelgrhfs".chars().collect();
-        // ㅏㄷㅏ(모음으로 시작), ㄹㄷㅏ(받침 + 초성), ㅎㅗㅏ(겹모음)
-        for pattern in ["kek", "fek", "ghk"] {
-            for _ in 0..100 {
-                let (text, keys) = generate_with_pattern(&mut rng, &allowed, pattern).unwrap();
-                assert!(keys.contains(pattern), "{text} {keys}");
-                assert_eq!(hangul::word_keys(&text).as_deref(), Some(keys.as_str()));
-                assert!(keys.chars().all(|k| allowed.contains(&k)), "{text} {keys}");
-            }
-        }
-        // 받침이 흔하지 않은 음절(잏, 핳)보다 자연스러운 것 (이하)을 먼저 만듦.
-        let allowed: Vec<char> = "dkegl".chars().collect();
-        for _ in 0..100 {
-            let (text, _) = generate_with_pattern(&mut rng, &allowed, "dlg").unwrap();
-            assert!(!text.contains('잏') && !text.contains('핳'), "{text}");
-        }
-        // 잠긴 키가 든 패턴은 못 만듦.
-        assert!(generate_with_pattern(&mut rng, &allowed, "kq").is_none());
     }
 
     #[test]

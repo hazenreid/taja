@@ -20,7 +20,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use app::App;
 use corpus::Ngrams;
 use layout::Layout;
-use layout::plan::make_plan_with;
+use layout::plan::{Plan, make_plan_with};
 use progress::{Profile, Targets};
 use storage::{Paths, load_profile};
 use words::{Lang, WordList};
@@ -36,8 +36,8 @@ enum LangArg {
 /// 기본 레이아웃: 저장소의 layouts/mine.txt (빌드할 때 저장소 경로가 들어감).
 const DEFAULT_LAYOUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/layouts/mine.txt");
 
-/// Terminal keyboard trainer: start with a few frequent keys. Each new key brings five goal
-/// trigrams, and the next key unlocks once they all reach the target speed and accuracy.
+/// Terminal keyboard trainer: start with a few frequent keys and unlock the next key
+/// once every open key reaches the target speed and accuracy.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
@@ -50,11 +50,11 @@ struct Args {
     #[arg(long, value_enum, default_value = "en")]
     lang: LangArg,
 
-    /// Target speed for goal trigrams and keys (WPM; Korean shows it x5 as keystrokes per minute)
+    /// Per-key target speed to unlock the next key (WPM; Korean shows it x5 as keystrokes per minute)
     #[arg(long, default_value_t = 30.0)]
     target_wpm: f64,
 
-    /// Target accuracy for goal trigrams and keys (%)
+    /// Per-key target accuracy to unlock the next key (%)
     #[arg(long, default_value_t = 95.0)]
     target_acc: f64,
 
@@ -66,7 +66,7 @@ struct Args {
     #[arg(long)]
     paths: bool,
 
-    /// Letter/trigram stats (corpus.bin) for English start keys, unlock order and goal trigrams
+    /// Letter/trigram stats (corpus.bin) used to order English key unlocks
     /// [default: assets/corpus.bin in the taja source folder, if it exists]
     #[arg(long)]
     corpus: Option<String>,
@@ -144,22 +144,24 @@ fn run_app(args: Args) -> Result<(), String> {
         Lang::Ko => paths.profile_file(&format!("{}-ko", layout.name)),
     };
 
-    // 트라이그램 빈도. 영어: corpus.bin (없으면 단어 목록으로 셈), 한글: 내장 단어 빈도.
-    // 시작 키와 언락 순서(새 진도를 만들 때만 계산), 단계마다 목표 트라이그램을 고를 때 씁니다.
-    let (ngrams, note) = match (corpus, lang) {
-        (Some(n), _) => (n, None),
-        (None, Lang::Ko) => (Ngrams::from_words(&words), None),
-        (None, Lang::En) => (
-            Ngrams::from_words(&words),
-            Some("no corpus.bin, unlock order from word list".to_string()),
-        ),
+    // 언락 순서는 새 진도를 만들 때만 계산합니다.
+    // 영어: corpus.bin의 트라이그램 (없으면 단어 목록으로 셈), 한글: 내장 단어 빈도.
+    let new_plan = || -> Result<(Plan, Option<String>), String> {
+        let (ngrams, note) = match (&corpus, lang) {
+            (Some(n), _) => (n.clone(), None),
+            (None, Lang::Ko) => (Ngrams::from_words(&words), None),
+            (None, Lang::En) => (
+                Ngrams::from_words(&words),
+                Some("no corpus.bin, unlock order from word list".to_string()),
+            ),
+        };
+        Ok((make_plan_with(&layout, &words, &ngrams), note))
     };
-    let new_plan = || make_plan_with(&layout, &words, &ngrams);
 
     let (profile, message) = match (args.reset, load_profile(&save_path)) {
         (false, Ok(Some(p))) if p.is_valid_for(&layout) => (p, None),
         (false, Ok(Some(_))) => (
-            Profile::new(&layout, &new_plan()),
+            Profile::new(&layout, &new_plan()?.0),
             Some("Layout changed, starting progress over".to_string()),
         ),
         (false, Err(e)) => {
@@ -169,7 +171,8 @@ fn run_app(args: Args) -> Result<(), String> {
             ));
         }
         _ => {
-            let p = Profile::new(&layout, &new_plan());
+            let (plan, note) = new_plan()?;
+            let p = Profile::new(&layout, &plan);
             let keys: Vec<String> = p.unlocked_keys().iter().map(|&k| lang.key_label(k)).collect();
             let mut msg = format!("Start keys: {}", keys.join(" "));
             if let Some(n) = note {
@@ -190,7 +193,7 @@ fn run_app(args: Args) -> Result<(), String> {
         }
     };
 
-    let mut app = App::new(layout, words, ngrams, profile, targets, save_path, message);
+    let mut app = App::new(layout, words, profile, targets, save_path, message);
     let mut terminal = ratatui::init();
     let result = event_loop(&mut terminal, &mut app);
     ratatui::restore();

@@ -45,15 +45,9 @@ impl Bigram {
     /// 허용된 글자로만 단어 하나를 만듭니다. `allowed`는 영어 소문자여야 합니다.
     pub fn generate_one(&self, rng: &mut impl Rng, allowed: &[char], min: usize, max: usize) -> String {
         let mut word: Vec<char> = Vec::new();
-        self.extend(rng, allowed, &mut word, min, max);
-        word.into_iter().collect()
-    }
-
-    /// `word` 뒤에 글자를 빈도대로 이어 붙입니다 (`min`글자가 되기 전에는 끝내지 않음).
-    fn extend(&self, rng: &mut impl Rng, allowed: &[char], word: &mut Vec<char>, min: usize, max: usize) {
+        let mut prev = EDGE;
         while word.len() < max {
             let n = word.len();
-            let prev = word.last().map_or(EDGE, |&c| index(c));
             // 같은 글자 3번 연속(aaa)은 막습니다.
             let banned = (n >= 2 && word[n - 1] == word[n - 2]).then(|| word[n - 1]);
             let mut options: Vec<(Option<char>, f64)> = allowed
@@ -65,36 +59,14 @@ impl Bigram {
                 options.push((None, self.prob[prev][EDGE] + SMOOTHING));
             }
             match pick_weighted(rng, &options) {
-                Some(Some(c)) => word.push(c),
+                Some(Some(c)) => {
+                    word.push(c);
+                    prev = index(c);
+                }
                 _ => break,
             }
         }
-    }
-
-    /// 글자 순서 `pattern`이 그대로 들어간 그럴듯한 단어. 앞에 0~2글자를 빈도대로 만들고,
-    /// pattern을 붙인 뒤 뒤를 이어 갑니다. `pattern`과 `allowed`는 영어 소문자여야 합니다.
-    pub fn generate_with_pattern(
-        &self,
-        rng: &mut impl Rng,
-        allowed: &[char],
-        pattern: &[char],
-        max: usize,
-    ) -> String {
-        let need_vowel = allowed.iter().any(|c| VOWELS.contains(c));
-        let max = max.max(pattern.len());
-        for _ in 0..60 {
-            let pre = rng.random_range(0..=2.min(max - pattern.len()));
-            let mut word: Vec<char> = Vec::new();
-            self.extend(rng, allowed, &mut word, pre, pre);
-            word.extend_from_slice(pattern);
-            let min = word.len().max(3);
-            self.extend(rng, allowed, &mut word, min, max);
-            let w: String = word.iter().collect();
-            if looks_ok(&w, 3, need_vowel) && w.contains(&pattern.iter().collect::<String>()) {
-                return w;
-            }
-        }
-        pattern.iter().collect()
+        word.into_iter().collect()
     }
 
     /// 그럴듯한 단어를 만듭니다. `focus`가 있으면 그 글자가 꼭 들어갑니다.
@@ -168,9 +140,6 @@ fn looks_ok(w: &str, min: usize, need_vowel: bool) -> bool {
     if chars.len() >= 2 && chars[0] == chars[1] {
         return false;
     }
-    if chars.windows(3).any(|t| t[0] == t[1] && t[1] == t[2]) {
-        return false;
-    }
     !need_vowel || chars.windows(4).all(|win| win.iter().any(|c| VOWELS.contains(c)))
 }
 
@@ -205,26 +174,6 @@ mod tests {
             assert!((1..=6).contains(&w.len()), "{w}");
             assert!(w.contains('e'), "{w}");
             assert!(w.chars().all(|c| allowed.contains(&c)), "{w}");
-        }
-    }
-
-    #[test]
-    fn pattern_words_contain_the_pattern() {
-        let list = WordList::english();
-        let mut rng = StdRng::seed_from_u64(4);
-        let allowed: Vec<char> = "etrhas".chars().collect();
-        for pattern in ["the", "her", "sta", "ear"] {
-            let p: Vec<char> = pattern.chars().collect();
-            let mut distinct = std::collections::HashSet::new();
-            for _ in 0..300 {
-                let w = list.bigram.generate_with_pattern(&mut rng, &allowed, &p, 7);
-                assert!(w.contains(pattern), "{w}");
-                assert!((3..=7).contains(&w.len()), "{w}");
-                assert!(w.chars().all(|c| allowed.contains(&c)), "{w}");
-                distinct.insert(w);
-            }
-            // 매번 같은 단어만 나오지 않음.
-            assert!(distinct.len() > 10, "{pattern}: {distinct:?}");
         }
     }
 

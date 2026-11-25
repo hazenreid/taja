@@ -10,10 +10,8 @@ use crate::words::line::Item;
 
 /// 키마다 최근 몇 번의 입력으로 평가할지.
 pub const WINDOW: usize = 30;
-/// 언락 판정에 필요한 최소 입력 횟수 (키).
+/// 언락 판정에 필요한 최소 입력 횟수.
 pub const MIN_SAMPLES: usize = 20;
-/// 목표 트라이그램 판정에 필요한 최소 횟수.
-pub const TRI_MIN_SAMPLES: usize = 10;
 /// 틀린 단어는 이만큼만 보관 (넘치면 오래된 것부터 버림).
 pub const MAX_MISSED: usize = 100;
 /// 약한 연결(앞 키 → 키)은 이만큼만 보관 (넘치면 점수가 가장 낮은 것부터 버림).
@@ -77,50 +75,21 @@ impl KeyStats {
         Some(60_000.0 / (avg.max(1.0) * 5.0))
     }
 
-    /// 목표까지 얼마나 왔는지 0.0 ~ 1.0. 입력 횟수가 `min`보다 적으면 그만큼 깎습니다.
-    pub fn progress_with(&self, t: Targets, min: usize) -> f64 {
+    /// 목표까지 얼마나 왔는지 0.0 ~ 1.0. 입력 횟수가 부족하면 그만큼 깎습니다.
+    pub fn progress(&self, t: Targets) -> f64 {
         let (Some(wpm), Some(acc)) = (self.wpm(), self.accuracy()) else {
             return 0.0;
         };
         let p = (wpm / t.wpm).min(acc / t.accuracy).min(1.0);
-        let enough = (self.count() as f64 / min as f64).min(1.0);
+        let enough = (self.count() as f64 / MIN_SAMPLES as f64).min(1.0);
         p * enough
     }
 
-    pub fn mastered_with(&self, t: Targets, min: usize) -> bool {
-        self.count() >= min
+    pub fn mastered(&self, t: Targets) -> bool {
+        self.count() >= MIN_SAMPLES
             && self.wpm().is_some_and(|w| w >= t.wpm)
             && self.accuracy().is_some_and(|a| a >= t.accuracy)
     }
-
-    /// 키 기준 (MIN_SAMPLES).
-    pub fn progress(&self, t: Targets) -> f64 {
-        self.progress_with(t, MIN_SAMPLES)
-    }
-
-    pub fn mastered(&self, t: Targets) -> bool {
-        self.mastered_with(t, MIN_SAMPLES)
-    }
-
-    /// 연습이 필요한 정도 (작을수록 먼저). `min`번을 못 채운 것 → 정확도 미달(낮은 순)
-    /// → 속도 미달(느린 순) → 모두 넘음(정확도 낮은 순).
-    fn need_rank(&self, t: Targets, min: usize) -> (u8, f64, f64) {
-        let acc = self.accuracy().unwrap_or(0.0);
-        let wpm = self.wpm().unwrap_or(0.0);
-        if self.count() < min {
-            (0, 0.0, 0.0)
-        } else if acc < t.accuracy {
-            (1, acc, wpm)
-        } else if wpm < t.wpm {
-            (2, wpm, acc)
-        } else {
-            (3, acc, wpm)
-        }
-    }
-}
-
-fn cmp_rank(a: (u8, f64, f64), b: (u8, f64, f64)) -> std::cmp::Ordering {
-    a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.total_cmp(&b.2))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,22 +116,6 @@ pub struct Profile {
     /// 약한 연결: 바로 앞 키 → 이 키를 칠 때 틀린 기록. 공백은 단어 경계.
     #[serde(default)]
     pub weak_pairs: Vec<WeakPair>,
-    /// 시작 키 개수 (예전 진도 파일에는 없어서 0).
-    #[serde(default)]
-    pub start_len: usize,
-    /// 지금 단계의 목표 트라이그램 (키 순서). 모두 통과하면 다음 키가 열림.
-    /// 비어 있으면 예전처럼 열린 키가 모두 목표를 넘어야 열림.
-    #[serde(default)]
-    pub goals: Vec<[char; 3]>,
-    /// 목표 트라이그램 기록 (지나간 단계 것도 남김).
-    #[serde(default)]
-    pub trigram_stats: Vec<TrigramStats>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TrigramStats {
-    pub tri: [char; 3],
-    pub stats: KeyStats,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -182,9 +135,6 @@ impl Profile {
             history: Vec::new(),
             missed: Vec::new(),
             weak_pairs: Vec::new(),
-            start_len: plan.start_len,
-            goals: Vec::new(),
-            trigram_stats: Vec::new(),
         }
     }
 
@@ -230,80 +180,37 @@ impl Profile {
     ///
     /// 같은 단계에서 값이 같으면 나중에 열린 키.
     pub fn focus(&self, t: Targets) -> Option<char> {
+        // (단계, 첫째 기준, 둘째 기준): 모두 작을수록 먼저.
+        let rank = |s: &KeyStats| {
+            let acc = s.accuracy().unwrap_or(0.0);
+            let wpm = s.wpm().unwrap_or(0.0);
+            if s.count() < MIN_SAMPLES {
+                (0, 0.0, 0.0)
+            } else if acc < t.accuracy {
+                (1, acc, wpm)
+            } else if wpm < t.wpm {
+                (2, wpm, acc)
+            } else {
+                (3, acc, wpm)
+            }
+        };
         self.unlocked_keys()
             .iter()
             .enumerate()
             .rev()
             .min_by(|a, b| {
-                cmp_rank(
-                    self.stats[a.0].need_rank(t, MIN_SAMPLES),
-                    self.stats[b.0].need_rank(t, MIN_SAMPLES),
-                )
+                let (ta, xa, ya) = rank(&self.stats[a.0]);
+                let (tb, xb, yb) = rank(&self.stats[b.0]);
+                ta.cmp(&tb).then(xa.total_cmp(&xb)).then(ya.total_cmp(&yb))
             })
             .map(|(_, &c)| c)
     }
 
-    /// 지금 단계에서 새로 열린 키들 (첫 단계면 시작 키 전부, 그다음부터는 마지막에 열린 키).
-    pub fn stage_new_keys(&self) -> Vec<char> {
-        if self.unlocked <= self.start_len {
-            self.unlocked_keys().to_vec()
-        } else {
-            self.order[self.unlocked - 1..self.unlocked].to_vec()
-        }
-    }
-
-    pub fn trigram(&self, tri: [char; 3]) -> Option<&KeyStats> {
-        self.trigram_stats.iter().find(|t| t.tri == tri).map(|t| &t.stats)
-    }
-
-    /// 목표 트라이그램을 쳤을 때만 기록합니다.
-    pub fn record_trigram(&mut self, tri: [char; 3], s: Sample) {
-        if !self.goals.contains(&tri) {
-            return;
-        }
-        match self.trigram_stats.iter_mut().find(|t| t.tri == tri) {
-            Some(t) => t.stats.record(s),
-            None => {
-                let mut stats = KeyStats::default();
-                stats.record(s);
-                self.trigram_stats.push(TrigramStats { tri, stats });
-            }
-        }
-    }
-
-    /// 목표 트라이그램을 연습이 필요한 순서로 (못 넘은 것이 앞). 같으면 원래 순서(빈도순).
-    pub fn goals_by_need(&self, t: Targets) -> Vec<[char; 3]> {
-        let empty = KeyStats::default();
-        let mut goals = self.goals.clone();
-        goals.sort_by(|a, b| {
-            let sa = self.trigram(*a).unwrap_or(&empty);
-            let sb = self.trigram(*b).unwrap_or(&empty);
-            cmp_rank(sa.need_rank(t, TRI_MIN_SAMPLES), sb.need_rank(t, TRI_MIN_SAMPLES))
-        });
-        goals
-    }
-
-    pub fn goal_mastered(&self, tri: [char; 3], t: Targets) -> bool {
-        self.trigram(tri)
-            .is_some_and(|s| s.mastered_with(t, TRI_MIN_SAMPLES))
-    }
-
-    /// 다음 키를 열 조건을 채웠으면 열고 그 키를 돌려줍니다. 목표 트라이그램은 비워지므로
-    /// 새 단계의 목표를 다시 정해야 합니다.
-    /// - 목표 트라이그램이 있으면: 목표가 모두 목표 속도·정확도를 넘었을 때
-    /// - 없으면 (연습할 트라이그램이 없는 단계): 이번 단계에 열린 키가 모두 목표를 넘었을 때
+    /// 열린 키가 모두 목표를 넘었으면 다음 키를 열고 그 키를 돌려줍니다.
     pub fn try_unlock(&mut self, t: Targets) -> Option<char> {
         let next = self.next_locked()?;
-        let ready = if self.goals.is_empty() {
-            self.stage_new_keys()
-                .iter()
-                .all(|&k| self.stats(k).is_some_and(|s| s.mastered(t)))
-        } else {
-            self.goals.iter().all(|&g| self.goal_mastered(g, t))
-        };
-        if ready {
+        if self.stats[..self.unlocked].iter().all(|s| s.mastered(t)) {
             self.unlocked += 1;
-            self.goals.clear();
             Some(next)
         } else {
             None
@@ -423,21 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn without_goals_only_the_new_key_must_reach_the_target() {
-        let mut p = profile();
-        p.unlocked += 1;
-        let new_key = p.order[p.unlocked - 1];
-        assert_eq!(p.try_unlock(T), None);
-        for _ in 0..MIN_SAMPLES {
-            p.record(new_key, fast());
-        }
-        // 시작 키는 하나도 안 쳤어도 새 키만 목표를 넘으면 열림.
-        let next = p.next_locked();
-        assert_eq!(p.try_unlock(T), next);
-    }
-
-    #[test]
-    fn unlocks_only_when_all_start_keys_mastered() {
+    fn unlocks_only_when_all_keys_mastered() {
         let mut p = profile();
         let keys: Vec<char> = p.unlocked_keys().to_vec();
         for &k in &keys[..keys.len() - 1] {
@@ -588,64 +481,5 @@ mod tests {
         }
         assert_eq!(p.weak_pairs.len(), MAX_WEAK_PAIRS);
         assert!(p.weak_pairs.iter().any(|w| w.pair == ['a', 'b']));
-    }
-
-    #[test]
-    fn goal_trigrams_gate_the_next_key() {
-        let mut p = profile();
-        let keys: Vec<char> = p.unlocked_keys().to_vec();
-        let g1 = [keys[0], keys[1], keys[0]];
-        let g2 = [keys[1], keys[0], keys[1]];
-        p.goals = vec![g1, g2];
-        // 키 기록이 하나도 없어도, 목표 트라이그램만 통과하면 열림.
-        for _ in 0..TRI_MIN_SAMPLES {
-            p.record_trigram(g1, fast());
-        }
-        assert_eq!(p.try_unlock(T), None);
-        assert_eq!(p.goals_by_need(T)[0], g2); // 아직 기록 없는 g2가 먼저
-        for _ in 0..TRI_MIN_SAMPLES - 1 {
-            p.record_trigram(g2, fast());
-        }
-        assert_eq!(p.try_unlock(T), None);
-        p.record_trigram(g2, fast());
-        let next = p.next_locked();
-        assert_eq!(p.try_unlock(T), next);
-        assert!(p.goals.is_empty());
-        // 목표가 아닌 트라이그램은 기록하지 않음.
-        p.record_trigram(g1, fast());
-        assert_eq!(p.trigram(g1).unwrap().count(), TRI_MIN_SAMPLES);
-    }
-
-    #[test]
-    fn goals_by_need_puts_inaccurate_before_slow() {
-        let mut p = profile();
-        let (a, b, c) = (['a', 'b', 'c'], ['d', 'e', 'f'], ['g', 'h', 'i']);
-        p.goals = vec![a, b, c];
-        for i in 0..TRI_MIN_SAMPLES {
-            p.record_trigram(a, fast());
-            p.record_trigram(
-                b,
-                Sample {
-                    ms: Some(1000),
-                    clean: true,
-                },
-            ); // 느림
-            p.record_trigram(
-                c,
-                Sample {
-                    ms: Some(200),
-                    clean: i % 2 == 0,
-                },
-            ); // 자주 틀림
-        }
-        assert_eq!(p.goals_by_need(T), vec![c, b, a]);
-    }
-
-    #[test]
-    fn stage_new_keys() {
-        let mut p = profile();
-        assert_eq!(p.stage_new_keys(), p.unlocked_keys().to_vec());
-        p.unlocked += 1;
-        assert_eq!(p.stage_new_keys(), vec![p.order[p.unlocked - 1]]);
     }
 }

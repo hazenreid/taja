@@ -10,13 +10,10 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::App;
 use crate::layout::COLS;
-use crate::progress::{KeyStats, TRI_MIN_SAMPLES};
 use crate::words::{Lang, char_width};
 
 const BAR: usize = 8;
 const ENTRY_WIDTH: usize = 22;
-/// 목표 트라이그램 칸 폭 (한글 자모 3개 = 6칸).
-const GOAL_WIDTH: usize = 28;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let [header, practice, keyboard, progress, footer] = Split::vertical([
@@ -123,9 +120,8 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
     };
     let text = vec![Line::raw(""), Line::from(target), typed, message];
     let focus = app
-        .patterns()
-        .first()
-        .map(|p| format!(" focus: {} ", app.pattern_label(p)))
+        .focus()
+        .map(|c| format!(" focus: {} ", app.label(c)))
         .unwrap_or_default();
     let block = Block::new()
         .borders(Borders::ALL)
@@ -139,12 +135,7 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     let next = app.lesson.current();
-    // 지금 가장 약한 패턴(트라이그램 또는 키)의 키들.
-    let focus: Vec<char> = app
-        .patterns()
-        .first()
-        .map(|p| p.chars().collect())
-        .unwrap_or_default();
+    let focus = app.focus();
 
     let mut lines: Vec<Line> = Vec::new();
     for (r, row) in app.layout.keys.iter().enumerate() {
@@ -163,7 +154,7 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
                     } else {
                         format!(" {label} ")
                     };
-                    spans.push(Span::styled(cell, key_style(app, ch, next, &focus)));
+                    spans.push(Span::styled(cell, key_style(app, ch, next, focus)));
                 }
                 None => spans.push(Span::styled(" · ", Style::new().fg(Color::DarkGray))),
             }
@@ -179,7 +170,7 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn key_style(app: &App, ch: char, next: Option<char>, focus: &[char]) -> Style {
+fn key_style(app: &App, ch: char, next: Option<char>, focus: Option<char>) -> Style {
     if Some(ch) == next {
         return Style::new()
             .fg(Color::Black)
@@ -196,163 +187,79 @@ fn key_style(app: &App, ch: char, next: Option<char>, focus: &[char]) -> Style {
     if !app.profile.is_unlocked(ch) {
         return Style::new().fg(Color::DarkGray);
     }
-    // Shift 글자(대문자)가 패턴에 있으면 그 자리 키도 강조.
-    if focus.iter().any(|f| f.to_ascii_lowercase() == ch) {
+    if Some(ch) == focus {
         return Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
     }
     let mastered = app.profile.stats(ch).is_some_and(|s| s.mastered(app.targets));
     Style::new().fg(if mastered { Color::Green } else { Color::White })
 }
 
-/// 막대 하나: 이름, 진행 막대, 속도, 정확도.
-fn bar_entry<'a>(
-    app: &App,
-    label: String,
-    label_cells: usize,
-    stats: &KeyStats,
-    progress: f64,
-    color: Color,
-    passed: bool,
-) -> Vec<Span<'a>> {
+fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let per_row = (inner_width / ENTRY_WIDTH).max(1);
+    let focus = app.focus();
     let speed_factor = match app.lang() {
         Lang::En => 1.0,
         Lang::Ko => 5.0,
     };
-    let filled = (progress * BAR as f64).round() as usize;
-    let speed = stats
-        .wpm()
-        .map(|w| format!("{:>4.0}", w * speed_factor))
-        .unwrap_or_else(|| "   -".into());
-    let acc = stats
-        .accuracy()
-        .map(|a| format!(" {:>3.0}%", a * 100.0))
-        .unwrap_or_else(|| "    -".into());
-    let width: usize = label.chars().map(char_width).sum();
-    let pad = " ".repeat(label_cells.saturating_sub(width));
-    vec![
-        Span::styled(
-            format!("{label}{pad} "),
-            Style::new().fg(color).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("█".repeat(filled), Style::new().fg(color)),
-        Span::styled("░".repeat(BAR - filled), Style::new().fg(Color::DarkGray)),
-        Span::raw(format!("{speed}{acc}")),
-        Span::styled(
-            if passed { " ✓  " } else { "    " },
-            Style::new().fg(Color::Green),
-        ),
-    ]
-}
 
-fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
-    let inner_width = area.width.saturating_sub(2) as usize;
-    let focus = app.patterns().first().cloned();
-    let empty = KeyStats::default();
-    let mut lines: Vec<Line> = Vec::new();
-
-    // 목표 트라이그램: 모두 목표를 넘으면 다음 키가 열립니다.
-    let goals = &app.profile.goals;
-    if !goals.is_empty() {
-        let label_cells = match app.lang() {
-            Lang::En => 3,
-            Lang::Ko => 6,
-        };
-        let entries: Vec<Vec<Span>> = goals
-            .iter()
-            .map(|&g| {
-                let keys: String = g.iter().collect();
-                let stats = app.profile.trigram(g).unwrap_or(&empty);
-                let passed = app.profile.goal_mastered(g, app.targets);
-                let color = if passed {
-                    Color::Green
-                } else if focus.as_deref() == Some(keys.as_str()) {
-                    Color::Yellow
-                } else {
-                    Color::White
-                };
-                let p = stats.progress_with(app.targets, TRI_MIN_SAMPLES);
-                bar_entry(
-                    app,
-                    app.pattern_label(&keys),
-                    label_cells,
-                    stats,
-                    p,
-                    color,
-                    passed,
-                )
-            })
-            .collect();
-        let per_row = (inner_width.saturating_sub(7) / GOAL_WIDTH).max(1);
-        for (i, row) in entries.chunks(per_row).enumerate() {
-            let head = if i == 0 { "Goals  " } else { "       " };
-            let mut spans = vec![Span::styled(head, Style::new().fg(Color::DarkGray))];
-            spans.extend(row.concat());
-            lines.push(Line::from(spans));
-        }
-    }
-
-    // 키마다.
-    let per_row = (inner_width / ENTRY_WIDTH).max(1);
     let entries: Vec<Vec<Span>> = app
         .profile
         .unlocked_keys()
         .iter()
         .map(|&k| {
-            let stats = app.profile.stats(k).unwrap_or(&empty);
-            let mastered = stats.mastered(app.targets);
-            let color = if mastered {
+            let stats = app.profile.stats(k).cloned().unwrap_or_default();
+            let p = stats.progress(app.targets);
+            let filled = (p * BAR as f64).round() as usize;
+            let color = if stats.mastered(app.targets) {
                 Color::Green
-            } else if focus.as_deref() == Some(k.to_string().as_str()) {
+            } else if Some(k) == focus {
                 Color::Yellow
             } else {
                 Color::White
             };
-            let mut entry = bar_entry(
-                app,
-                app.label(k),
-                2,
-                stats,
-                stats.progress(app.targets),
-                color,
-                false,
-            );
-            entry.pop(); // 키는 통과 표시 대신 색으로.
-            entry.push(Span::raw("  "));
-            entry
+            let speed = stats
+                .wpm()
+                .map(|w| format!("{:>4.0}", w * speed_factor))
+                .unwrap_or_else(|| "   -".into());
+            let acc = stats
+                .accuracy()
+                .map(|a| format!(" {:>3.0}%", a * 100.0))
+                .unwrap_or_else(|| "    -".into());
+            let label = app.label(k);
+            let pad = if char_width(label.chars().next().unwrap_or(' ')) == 2 {
+                ""
+            } else {
+                " "
+            };
+            vec![
+                Span::styled(
+                    format!("{label}{pad} "),
+                    Style::new().fg(color).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("█".repeat(filled), Style::new().fg(color)),
+                Span::styled("░".repeat(BAR - filled), Style::new().fg(Color::DarkGray)),
+                Span::raw(format!("{speed}{acc}  ")),
+            ]
         })
         .collect();
-    lines.extend(entries.chunks(per_row).map(|row| Line::from(row.concat())));
 
+    let mut lines: Vec<Line> = entries
+        .chunks(per_row)
+        .map(|row| Line::from(row.concat()))
+        .collect();
     let next = match app.profile.next_locked() {
-        Some(k) if !goals.is_empty() => format!(
-            "Next key: {} · opens when all goals pass ({}/{})",
-            app.describe_key(k),
-            goals
-                .iter()
-                .filter(|&&g| app.profile.goal_mastered(g, app.targets))
-                .count(),
-            goals.len(),
+        Some(k) => format!(
+            "Next unlock: {} - opens when every unlocked key reaches the target",
+            app.describe_key(k)
         ),
-        Some(k) => {
-            let keys: Vec<String> = app
-                .profile
-                .stage_new_keys()
-                .iter()
-                .map(|&c| app.label(c))
-                .collect();
-            format!(
-                "Next key: {} · opens when {} reaches the target",
-                app.describe_key(k),
-                keys.join(" ")
-            )
-        }
         None => "All keys unlocked!".to_string(),
     };
     lines.push(Line::styled(next, Style::new().fg(Color::DarkGray)));
 
     let title = match app.lang() {
-        Lang::En => " Progress (WPM · accuracy) ",
-        Lang::Ko => " Progress (KPM · accuracy) ",
+        Lang::En => " Per-key progress (WPM · accuracy) ",
+        Lang::Ko => " Per-key progress (KPM · accuracy) ",
     };
     let block = Block::new().borders(Borders::ALL).title(title);
     f.render_widget(Paragraph::new(lines).block(block), area);
