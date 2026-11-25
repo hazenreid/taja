@@ -32,7 +32,7 @@ cargo run --release -- --help           # 옵션 보기
 
 - `--lang en|ko`: 연습할 언어 (기본 en)
 - `--target-wpm 30`: 키별 목표 속도 (기본 30, 한글은 ×5 해서 150 KPM으로 표시)
-- `--target-acc 95`: 키별 목표 정확도 % (기본 95)
+- `--target-acc 90`: 키별 목표 정확도 % (기본 90)
 - `--reset`: 이 레이아웃의 진도를 지우고 처음부터
 - `--paths`: 레이아웃 폴더와 진도 폴더 위치 보기
 - `--corpus <경로>`: 영어 언락 순서에 쓸 `corpus.bin` (기본: 저장소의 `assets/corpus.bin`)

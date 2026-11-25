@@ -55,7 +55,7 @@ struct Args {
     target_wpm: f64,
 
     /// Per-key target accuracy to unlock the next key (%)
-    #[arg(long, default_value_t = 95.0)]
+    #[arg(long, default_value_t = 90.0)]
     target_acc: f64,
 
     /// Erase progress for this layout and language and start over
