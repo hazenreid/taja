@@ -210,7 +210,8 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
         .map(|&k| {
             let stats = app.profile.stats(k).cloned().unwrap_or_default();
             let p = stats.progress(app.targets);
-            let filled = (p * BAR as f64).round() as usize;
+            // 내림: 막대가 꽉 차는 건 목표를 넘었을 때뿐 (반올림하면 목표의 94%만 돼도 꽉 차 보임).
+            let filled = (p * BAR as f64).floor() as usize;
             let color = if stats.mastered(app.targets) {
                 Color::Green
             } else if Some(k) == focus {
@@ -218,14 +219,24 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Color::White
             };
+            // 목표에 못 미치는 값은 빨간색.
+            let below = |low: bool| {
+                if low {
+                    Style::new().fg(Color::Red)
+                } else {
+                    Style::new()
+                }
+            };
             let speed = stats
                 .wpm()
                 .map(|w| format!("{:>4.0}", w * speed_factor))
                 .unwrap_or_else(|| "   -".into());
+            let speed_style = below(stats.wpm().is_some_and(|w| w < app.targets.wpm));
             let acc = stats
                 .accuracy()
                 .map(|a| format!(" {:>3.0}%", a * 100.0))
                 .unwrap_or_else(|| "    -".into());
+            let acc_style = below(stats.accuracy().is_some_and(|a| a < app.targets.accuracy));
             let label = app.label(k);
             let pad = if char_width(label.chars().next().unwrap_or(' ')) == 2 {
                 ""
@@ -239,7 +250,9 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
                 ),
                 Span::styled("█".repeat(filled), Style::new().fg(color)),
                 Span::styled("░".repeat(BAR - filled), Style::new().fg(Color::DarkGray)),
-                Span::raw(format!("{speed}{acc}  ")),
+                Span::styled(speed, speed_style),
+                Span::styled(acc, acc_style),
+                Span::raw("  "),
             ]
         })
         .collect();
@@ -248,10 +261,23 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
         .chunks(per_row)
         .map(|row| Line::from(row.concat()))
         .collect();
+    // 아직 목표를 못 넘은 키 (모두 넘어야 다음 키가 열림).
+    let waiting: Vec<String> = app
+        .profile
+        .unlocked_keys()
+        .iter()
+        .filter(|&&k| !app.profile.stats(k).is_some_and(|s| s.mastered(app.targets)))
+        .map(|&k| app.label(k))
+        .collect();
     let next = match app.profile.next_locked() {
-        Some(k) => format!(
-            "Next unlock: {} - opens when every unlocked key reaches the target",
+        Some(k) if waiting.is_empty() => format!(
+            "Next unlock: {} - opens when this line is done",
             app.describe_key(k)
+        ),
+        Some(k) => format!(
+            "Next unlock: {} - waiting for: {}",
+            app.describe_key(k),
+            waiting.join(" ")
         ),
         None => "All keys unlocked!".to_string(),
     };

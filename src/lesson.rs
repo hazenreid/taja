@@ -72,14 +72,15 @@ impl Lesson {
             .map(|t| now.saturating_duration_since(t))
             .filter(|d| *d <= PAUSE)
             .map(|d| d.as_millis() as u32);
-        let sample = Sample {
-            ms,
-            clean: !self.had_error[self.pos],
-        };
         let prev = if self.pos == 0 {
             ' '
         } else {
             self.text[self.pos - 1]
+        };
+        let sample = Sample {
+            ms,
+            clean: !self.had_error[self.pos],
+            word_start: prev == ' ',
         };
         self.last_hit = Some(now);
         self.pos += 1;
@@ -134,7 +135,8 @@ mod tests {
                 prev: 'a',
                 sample: Sample {
                     ms: Some(300),
-                    clean: false
+                    clean: false,
+                    word_start: false,
                 }
             }
         );
@@ -154,13 +156,28 @@ mod tests {
             sample,
             Sample {
                 ms: None,
-                clean: true
+                clean: true,
+                word_start: true,
             }
         );
         let Outcome::Correct { sample, .. } = l.type_char('b', t0 + Duration::from_secs(5)) else {
             panic!()
         };
         assert_eq!(sample.ms, None);
+    }
+
+    #[test]
+    fn marks_word_starts() {
+        let t0 = Instant::now();
+        let mut l = Lesson::new("ab cd");
+        let starts: Vec<bool> = "ab cd"
+            .chars()
+            .map(|c| match l.type_char(c, t0) {
+                Outcome::Correct { sample, .. } => sample.word_start,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(starts, [true, false, false, true, false]);
     }
 
     #[test]

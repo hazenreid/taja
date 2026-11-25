@@ -12,6 +12,8 @@ use crate::words::line::Item;
 pub const WINDOW: usize = 30;
 /// 언락 판정에 필요한 최소 입력 횟수.
 pub const MIN_SAMPLES: usize = 20;
+/// 속도는 단어 안에서 한 번에 맞게 친 입력으로 재는데, 그런 입력이 이보다 적으면 전부로 잽니다.
+const MIN_FLUENT: usize = 5;
 /// 틀린 단어는 이만큼만 보관 (넘치면 오래된 것부터 버림).
 pub const MAX_MISSED: usize = 100;
 /// 약한 연결(앞 키 → 키)은 이만큼만 보관 (넘치면 점수가 가장 낮은 것부터 버림).
@@ -38,6 +40,9 @@ pub struct Sample {
     pub ms: Option<u32>,
     /// 한 번에 맞게 쳤는지.
     pub clean: bool,
+    /// 단어 첫 키인지 (앞이 공백이거나 줄의 첫 키). 예전 진도 파일에는 없어서 기본값 false.
+    #[serde(default)]
+    pub word_start: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -66,8 +71,22 @@ impl KeyStats {
     }
 
     /// 평균 키 간격을 WPM으로 (단어 = 5타).
+    ///
+    /// 단어 안에서 한 번에 맞게 친 입력만 씁니다. 단어 첫 키는 다음 단어를 읽는 시간이,
+    /// 틀렸다 고친 키는 정정하는 시간이 들어가서 손 속도보다 훨씬 느리게 나오기 때문입니다
+    /// (틀린 것은 정확도에서 따로 셈). 그런 입력이 MIN_FLUENT개보다 적으면 시간을 잰 입력 전부로.
     pub fn wpm(&self) -> Option<f64> {
-        let times: Vec<u32> = self.samples.iter().filter_map(|s| s.ms).collect();
+        let fluent: Vec<u32> = self
+            .samples
+            .iter()
+            .filter(|s| s.clean && !s.word_start)
+            .filter_map(|s| s.ms)
+            .collect();
+        let times: Vec<u32> = if fluent.len() >= MIN_FLUENT {
+            fluent
+        } else {
+            self.samples.iter().filter_map(|s| s.ms).collect()
+        };
         if times.is_empty() {
             return None;
         }
@@ -286,6 +305,7 @@ mod tests {
         Sample {
             ms: Some(200),
             clean: true,
+            word_start: false,
         }
     }
 
@@ -300,13 +320,47 @@ mod tests {
         s.record(Sample {
             ms: Some(480),
             clean: true,
+            word_start: false,
         }); // 25 WPM
         s.record(Sample {
             ms: None,
             clean: false,
+            word_start: false,
         });
         assert_eq!(s.wpm(), Some(25.0));
         assert_eq!(s.accuracy(), Some(0.5));
+    }
+
+    #[test]
+    fn speed_ignores_word_starts_and_corrections() {
+        let sample = |ms, clean, word_start| Sample {
+            ms: Some(ms),
+            clean,
+            word_start,
+        };
+        let mut s = KeyStats::default();
+        for i in 0..WINDOW {
+            s.record(match i % 3 {
+                0 => sample(900, true, true),    // 단어 첫 키: 다음 단어를 읽느라 느림
+                1 => sample(1500, false, false), // 틀렸다 고침
+                _ => sample(300, true, false),   // 단어 안: 40 WPM
+            });
+        }
+        assert_eq!(s.wpm(), Some(40.0));
+        assert!((s.accuracy().unwrap() - 2.0 / 3.0).abs() < 1e-9);
+
+        // 단어 안 입력이 MIN_FLUENT개보다 적으면 전부로 계산 (속도가 아예 안 나오지 않게).
+        let mut t = KeyStats::default();
+        for _ in 0..WINDOW {
+            t.record(sample(600, true, true));
+        }
+        assert_eq!(t.wpm(), Some(20.0));
+    }
+
+    #[test]
+    fn old_samples_without_word_start_still_load() {
+        let s: Sample = serde_json::from_str(r#"{"ms":200,"clean":true}"#).unwrap();
+        assert!(!s.word_start);
     }
 
     #[test]
@@ -365,6 +419,7 @@ mod tests {
                 Sample {
                     ms: Some(1000),
                     clean: true,
+                    word_start: false,
                 },
             ); // 12 WPM
         }
@@ -429,6 +484,7 @@ mod tests {
                     Sample {
                         ms: Some(ms),
                         clean: wrong_every == 0 || i % wrong_every != 0,
+                        word_start: false,
                     },
                 );
             }
