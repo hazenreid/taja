@@ -321,28 +321,31 @@ mod tests {
     /// 단어 첫 키에는 다음 단어를 읽는 시간이 들어가므로, 이 때문에 키가 막히면 안 됩니다.
     #[test]
     fn slow_word_starts_do_not_block_unlocking() {
-        let (mut app, dir) = app_for(WordList::english(), "word-starts");
-        app.targets = Targets {
-            wpm: 30.0,
-            accuracy: 0.90,
-        };
-        let start = app.profile.unlocked;
-        let mut now = Instant::now();
-        for _ in 0..150 {
-            let keys = app.target.keys.clone();
-            for (i, &c) in keys.iter().enumerate() {
-                let word_start = i == 0 || keys[i - 1] == ' ';
-                now += Duration::from_millis(if word_start { 900 } else { 300 });
-                app.type_char(c, now);
+        for words in [WordList::english(), WordList::korean()] {
+            let lang = words.lang.name();
+            let (mut app, dir) = app_for(words, &format!("word-starts-{lang}"));
+            app.targets = Targets {
+                wpm: 30.0,
+                accuracy: 0.90,
+            };
+            let start = app.profile.unlocked;
+            let mut now = Instant::now();
+            for _ in 0..150 {
+                let keys = app.target.keys.clone();
+                for (i, &c) in keys.iter().enumerate() {
+                    let word_start = i == 0 || keys[i - 1] == ' ';
+                    now += Duration::from_millis(if word_start { 900 } else { 300 });
+                    app.type_char(c, now);
+                }
             }
+            assert!(
+                app.profile.unlocked >= start + 3,
+                "{lang}: {} -> {} keys",
+                start,
+                app.profile.unlocked
+            );
+            let _ = std::fs::remove_dir_all(dir);
         }
-        assert!(
-            app.profile.unlocked >= start + 3,
-            "{} -> {} keys",
-            start,
-            app.profile.unlocked
-        );
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
