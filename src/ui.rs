@@ -10,6 +10,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::App;
 use crate::layout::COLS;
+use crate::progress::WordStarts;
 use crate::words::{Lang, char_width};
 
 const BAR: usize = 8;
@@ -136,6 +137,7 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
 fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     let next = app.lesson.current();
     let focus = app.focus();
+    let ws = app.profile.word_starts();
 
     let mut lines: Vec<Line> = Vec::new();
     for (r, row) in app.layout.keys.iter().enumerate() {
@@ -154,7 +156,7 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
                     } else {
                         format!(" {label} ")
                     };
-                    spans.push(Span::styled(cell, key_style(app, ch, next, focus)));
+                    spans.push(Span::styled(cell, key_style(app, ch, next, focus, ws)));
                 }
                 None => spans.push(Span::styled(" · ", Style::new().fg(Color::DarkGray))),
             }
@@ -170,7 +172,7 @@ fn draw_keyboard(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn key_style(app: &App, ch: char, next: Option<char>, focus: Option<char>) -> Style {
+fn key_style(app: &App, ch: char, next: Option<char>, focus: Option<char>, ws: WordStarts) -> Style {
     if Some(ch) == next {
         return Style::new()
             .fg(Color::Black)
@@ -190,7 +192,7 @@ fn key_style(app: &App, ch: char, next: Option<char>, focus: Option<char>) -> St
     if Some(ch) == focus {
         return Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
     }
-    let mastered = app.profile.stats(ch).is_some_and(|s| s.mastered(app.targets));
+    let mastered = app.profile.stats(ch).is_some_and(|s| s.mastered(app.targets, ws));
     Style::new().fg(if mastered { Color::Green } else { Color::White })
 }
 
@@ -198,6 +200,7 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
     let inner_width = area.width.saturating_sub(2) as usize;
     let per_row = (inner_width / ENTRY_WIDTH).max(1);
     let focus = app.focus();
+    let ws = app.profile.word_starts();
     let speed_factor = match app.lang() {
         Lang::En => 1.0,
         Lang::Ko => 5.0,
@@ -209,10 +212,10 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|&k| {
             let stats = app.profile.stats(k).cloned().unwrap_or_default();
-            let p = stats.progress(app.targets);
+            let p = stats.progress(app.targets, ws);
             // 내림: 막대가 꽉 차는 건 목표를 넘었을 때뿐 (반올림하면 목표의 94%만 돼도 꽉 차 보임).
             let filled = (p * BAR as f64).floor() as usize;
-            let color = if stats.mastered(app.targets) {
+            let color = if stats.mastered(app.targets, ws) {
                 Color::Green
             } else if Some(k) == focus {
                 Color::Yellow
@@ -228,10 +231,10 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
                 }
             };
             let speed = stats
-                .wpm()
+                .wpm(ws)
                 .map(|w| format!("{:>4.0}", w * speed_factor))
                 .unwrap_or_else(|| "   -".into());
-            let speed_style = below(stats.wpm().is_some_and(|w| w < app.targets.wpm));
+            let speed_style = below(stats.wpm(ws).is_some_and(|w| w < app.targets.wpm));
             let acc = stats
                 .accuracy()
                 .map(|a| format!(" {:>3.0}%", a * 100.0))
@@ -266,7 +269,7 @@ fn draw_progress(f: &mut Frame, app: &App, area: Rect) {
         .profile
         .unlocked_keys()
         .iter()
-        .filter(|&&k| !app.profile.stats(k).is_some_and(|s| s.mastered(app.targets)))
+        .filter(|&&k| !app.profile.stats(k).is_some_and(|s| s.mastered(app.targets, ws)))
         .map(|&k| app.label(k))
         .collect();
     let next = match app.profile.next_locked() {

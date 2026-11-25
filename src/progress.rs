@@ -12,8 +12,8 @@ use crate::words::line::Item;
 pub const WINDOW: usize = 30;
 /// 언락 판정에 필요한 최소 입력 횟수.
 pub const MIN_SAMPLES: usize = 20;
-/// 속도는 단어 안에서 한 번에 맞게 친 입력으로 재는데, 그런 입력이 이보다 적으면 전부로 잽니다.
-const MIN_FLUENT: usize = 5;
+/// 단어 첫 키가 평소 단어 첫 키 시간(중간값)의 이 배수보다 오래 걸렸으면 쉬었다 친 것으로 봅니다.
+const REST_FACTOR: f64 = 2.0;
 /// 틀린 단어는 이만큼만 보관 (넘치면 오래된 것부터 버림).
 pub const MAX_MISSED: usize = 100;
 /// 약한 연결(앞 키 → 키)은 이만큼만 보관 (넘치면 점수가 가장 낮은 것부터 버림).
@@ -70,33 +70,40 @@ impl KeyStats {
         Some(clean as f64 / self.samples.len() as f64)
     }
 
-    /// 평균 키 간격을 WPM으로 (단어 = 5타).
+    /// 평균 키 간격을 WPM으로 (단어 = 5타). 한 번에 맞게 친 입력만 씁니다.
     ///
-    /// 단어 안에서 한 번에 맞게 친 입력만 씁니다. 단어 첫 키는 다음 단어를 읽는 시간이,
-    /// 틀렸다 고친 키는 정정하는 시간이 들어가서 손 속도보다 훨씬 느리게 나오기 때문입니다
-    /// (틀린 것은 정확도에서 따로 셈). 그런 입력이 MIN_FLUENT개보다 적으면 시간을 잰 입력 전부로.
-    pub fn wpm(&self) -> Option<f64> {
-        let fluent: Vec<u32> = self
+    /// - 틀렸다 고친 키: 정정하는 시간이 들어가므로 뺌 (틀린 것은 정확도에서 따로 셈)
+    /// - 단어 첫 키: 평소 단어 첫 키 시간의 REST_FACTOR배보다 오래 걸렸으면 쉬었다 친 것으로 보고 뺌.
+    ///   나머지는 평소 배율(`ws.ratio`)로 나눠서 셈. 다음 단어를 읽는 시간은 빠지고,
+    ///   그 키를 찾느라 평소보다 더 걸린 만큼은 남음
+    /// - 한 번에 맞게 친 입력이 없으면 시간을 잰 입력 전부로
+    pub fn wpm(&self, ws: WordStarts) -> Option<f64> {
+        let mut times: Vec<f64> = self
             .samples
             .iter()
-            .filter(|s| s.clean && !s.word_start)
-            .filter_map(|s| s.ms)
+            .filter(|s| s.clean)
+            .filter_map(|s| {
+                let ms = f64::from(s.ms?);
+                match s.word_start {
+                    false => Some(ms),
+                    true if ms > ws.rest_ms => None,
+                    true => Some(ms / ws.ratio),
+                }
+            })
             .collect();
-        let times: Vec<u32> = if fluent.len() >= MIN_FLUENT {
-            fluent
-        } else {
-            self.samples.iter().filter_map(|s| s.ms).collect()
-        };
+        if times.is_empty() {
+            times = self.samples.iter().filter_map(|s| s.ms).map(f64::from).collect();
+        }
         if times.is_empty() {
             return None;
         }
-        let avg = times.iter().map(|&t| t as f64).sum::<f64>() / times.len() as f64;
+        let avg = times.iter().sum::<f64>() / times.len() as f64;
         Some(60_000.0 / (avg.max(1.0) * 5.0))
     }
 
     /// 목표까지 얼마나 왔는지 0.0 ~ 1.0. 입력 횟수가 부족하면 그만큼 깎습니다.
-    pub fn progress(&self, t: Targets) -> f64 {
-        let (Some(wpm), Some(acc)) = (self.wpm(), self.accuracy()) else {
+    pub fn progress(&self, t: Targets, ws: WordStarts) -> f64 {
+        let (Some(wpm), Some(acc)) = (self.wpm(ws), self.accuracy()) else {
             return 0.0;
         };
         let p = (wpm / t.wpm).min(acc / t.accuracy).min(1.0);
@@ -104,10 +111,66 @@ impl KeyStats {
         p * enough
     }
 
-    pub fn mastered(&self, t: Targets) -> bool {
+    pub fn mastered(&self, t: Targets, ws: WordStarts) -> bool {
         self.count() >= MIN_SAMPLES
-            && self.wpm().is_some_and(|w| w >= t.wpm)
+            && self.wpm(ws).is_some_and(|w| w >= t.wpm)
             && self.accuracy().is_some_and(|a| a >= t.accuracy)
+    }
+}
+
+/// 단어 첫 키 보정. 단어 첫 키(공백 다음)에는 다음 단어를 읽는 시간이 더 들어가서, 같은 키라도
+/// 단어 안에서보다 느립니다. 그 사람의 평소 배율(단어 첫 키 중간값 ÷ 단어 안 중간값)로 나눠서
+/// 단어 안 입력과 같은 기준으로 맞춥니다. 열린 키들의 최근 기록(한 번에 맞게 친 것)으로 계산합니다.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WordStarts {
+    /// 단어 첫 키가 단어 안보다 평소 몇 배 느린지 (1 이상).
+    pub ratio: f64,
+    /// 이보다 오래 걸린 단어 첫 키는 쉬었다 친 것으로 보고 속도에서 뺌.
+    pub rest_ms: f64,
+}
+
+impl WordStarts {
+    /// 보정 없음 (단어 첫 키 기록이 없을 때).
+    pub const NONE: WordStarts = WordStarts {
+        ratio: 1.0,
+        rest_ms: f64::INFINITY,
+    };
+
+    pub fn from_stats<'a>(stats: impl IntoIterator<Item = &'a KeyStats>) -> Self {
+        let (mut inside, mut starts) = (Vec::new(), Vec::new());
+        for s in stats {
+            for x in s.samples.iter().filter(|x| x.clean) {
+                match (x.ms, x.word_start) {
+                    (Some(ms), true) => starts.push(ms),
+                    (Some(ms), false) => inside.push(ms),
+                    (None, _) => {}
+                }
+            }
+        }
+        if starts.is_empty() {
+            return Self::NONE;
+        }
+        let start = median(&starts);
+        let ratio = if inside.is_empty() {
+            1.0
+        } else {
+            (start / median(&inside)).max(1.0)
+        };
+        WordStarts {
+            ratio,
+            rest_ms: start * REST_FACTOR,
+        }
+    }
+}
+
+fn median(values: &[u32]) -> f64 {
+    let mut v = values.to_vec();
+    v.sort_unstable();
+    let n = v.len();
+    if n % 2 == 1 {
+        v[n / 2] as f64
+    } else {
+        (v[n / 2 - 1] as f64 + v[n / 2] as f64) / 2.0
     }
 }
 
@@ -191,6 +254,11 @@ impl Profile {
         }
     }
 
+    /// 열린 키들의 기록으로 계산한 단어 첫 키 보정.
+    pub fn word_starts(&self) -> WordStarts {
+        WordStarts::from_stats(&self.stats[..self.unlocked])
+    }
+
     /// 집중 키: 열린 키 중 가장 연습이 필요한 키.
     /// 1. 아직 MIN_SAMPLES번을 못 친 키 (새로 열린 키는 기록이 없어서 먼저)
     /// 2. 정확도가 목표 미달인 키 중 정확도가 가장 낮은 키
@@ -199,10 +267,11 @@ impl Profile {
     ///
     /// 같은 단계에서 값이 같으면 나중에 열린 키.
     pub fn focus(&self, t: Targets) -> Option<char> {
+        let ws = self.word_starts();
         // (단계, 첫째 기준, 둘째 기준): 모두 작을수록 먼저.
         let rank = |s: &KeyStats| {
             let acc = s.accuracy().unwrap_or(0.0);
-            let wpm = s.wpm().unwrap_or(0.0);
+            let wpm = s.wpm(ws).unwrap_or(0.0);
             if s.count() < MIN_SAMPLES {
                 (0, 0.0, 0.0)
             } else if acc < t.accuracy {
@@ -228,7 +297,8 @@ impl Profile {
     /// 열린 키가 모두 목표를 넘었으면 다음 키를 열고 그 키를 돌려줍니다.
     pub fn try_unlock(&mut self, t: Targets) -> Option<char> {
         let next = self.next_locked()?;
-        if self.stats[..self.unlocked].iter().all(|s| s.mastered(t)) {
+        let ws = self.word_starts();
+        if self.stats[..self.unlocked].iter().all(|s| s.mastered(t, ws)) {
             self.unlocked += 1;
             Some(next)
         } else {
@@ -327,34 +397,57 @@ mod tests {
             clean: false,
             word_start: false,
         });
-        assert_eq!(s.wpm(), Some(25.0));
+        assert_eq!(s.wpm(WordStarts::NONE), Some(25.0));
         assert_eq!(s.accuracy(), Some(0.5));
     }
 
     #[test]
-    fn speed_ignores_word_starts_and_corrections() {
+    fn speed_skips_corrections_and_rests_and_scales_word_starts() {
         let sample = |ms, clean, word_start| Sample {
             ms: Some(ms),
             clean,
             word_start,
         };
-        let mut s = KeyStats::default();
+        // 평소: 단어 안 300ms, 단어 첫 키 600ms → 배율 2, 600 × 2 = 1200ms가 넘으면 쉰 것.
+        let mut usual = KeyStats::default();
         for i in 0..WINDOW {
-            s.record(match i % 3 {
-                0 => sample(900, true, true),    // 단어 첫 키: 다음 단어를 읽느라 느림
-                1 => sample(1500, false, false), // 틀렸다 고침
-                _ => sample(300, true, false),   // 단어 안: 40 WPM
-            });
+            let start = i % 2 == 1;
+            usual.record(sample(if start { 600 } else { 300 }, true, start));
         }
-        assert_eq!(s.wpm(), Some(40.0));
-        assert!((s.accuracy().unwrap() - 2.0 / 3.0).abs() < 1e-9);
+        let ws = WordStarts::from_stats([&usual]);
+        assert_eq!(
+            ws,
+            WordStarts {
+                ratio: 2.0,
+                rest_ms: 1200.0
+            }
+        );
+        // 단어 첫 키를 평소처럼 치는 키는 단어 안과 같은 속도 (300ms = 40 WPM).
+        assert_eq!(usual.wpm(ws), Some(40.0));
 
-        // 단어 안 입력이 MIN_FLUENT개보다 적으면 전부로 계산 (속도가 아예 안 나오지 않게).
-        let mut t = KeyStats::default();
-        for _ in 0..WINDOW {
-            t.record(sample(600, true, true));
-        }
-        assert_eq!(t.wpm(), Some(20.0));
+        // 단어 안 300ms + 틀렸다 고친 1500ms + 단어 첫 키 `start_ms`.
+        let key = |start_ms| {
+            let mut s = KeyStats::default();
+            for i in 0..WINDOW {
+                s.record(match i % 3 {
+                    0 => sample(start_ms, true, true),
+                    1 => sample(1500, false, false),
+                    _ => sample(300, true, false),
+                });
+            }
+            s
+        };
+        // 이 키만 단어 첫 키에서 900ms (평소보다 찾는 데 오래 걸림): 900 / 2 = 450ms로 셈
+        // → (300 + 450) / 2 = 375ms = 32 WPM. 틀렸다 고친 1500ms는 뺌.
+        assert_eq!(key(900).wpm(ws), Some(32.0));
+        // 1500ms는 평소 단어 첫 키의 2배를 넘으므로 쉰 것으로 보고 뺌 → 단어 안 속도만.
+        assert_eq!(key(1500).wpm(ws), Some(40.0));
+        // 보정이 없으면 그대로 셈 → (300 + 900) / 2 = 600ms = 20 WPM.
+        assert_eq!(key(900).wpm(WordStarts::NONE), Some(20.0));
+        // 틀린 것은 정확도에서만.
+        assert!((key(900).accuracy().unwrap() - 2.0 / 3.0).abs() < 1e-9);
+        // 기록이 없으면 보정 없음.
+        assert_eq!(WordStarts::from_stats([&KeyStats::default()]), WordStarts::NONE);
     }
 
     #[test]
@@ -378,9 +471,9 @@ mod tests {
         for _ in 0..MIN_SAMPLES - 1 {
             s.record(fast());
         }
-        assert!(!s.mastered(T));
+        assert!(!s.mastered(T, WordStarts::NONE));
         s.record(fast());
-        assert!(s.mastered(T));
+        assert!(s.mastered(T, WordStarts::NONE));
     }
 
     #[test]

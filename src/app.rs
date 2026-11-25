@@ -317,13 +317,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// 단어 안에서는 300ms(40 WPM, 목표 30 WPM보다 빠름)로 치고, 단어 첫 키만 900ms 걸리는 사람.
-    /// 단어 첫 키에는 다음 단어를 읽는 시간이 들어가므로, 이 때문에 키가 막히면 안 됩니다.
+    /// 단어 안에서는 300ms(40 WPM, 목표 30 WPM보다 빠름)로 치고, 단어 첫 키는 그보다 느린 사람.
+    /// 단어 첫 키에는 다음 단어를 읽는 시간이 들어가므로, 이 때문에 키가 막히면 안 됩니다
+    /// (단어 첫 키가 평소의 1.8배, 2배, 3배인 경우 모두).
     #[test]
     fn slow_word_starts_do_not_block_unlocking() {
-        for words in [WordList::english(), WordList::korean()] {
+        for (ko, start_ms) in [
+            (false, 540),
+            (false, 600),
+            (false, 900),
+            (true, 540),
+            (true, 600),
+            (true, 900),
+        ] {
+            let words = if ko {
+                WordList::korean()
+            } else {
+                WordList::english()
+            };
             let lang = words.lang.name();
-            let (mut app, dir) = app_for(words, &format!("word-starts-{lang}"));
+            let (mut app, dir) = app_for(words, &format!("word-starts-{lang}-{start_ms}"));
             app.targets = Targets {
                 wpm: 30.0,
                 accuracy: 0.90,
@@ -334,13 +347,13 @@ mod tests {
                 let keys = app.target.keys.clone();
                 for (i, &c) in keys.iter().enumerate() {
                     let word_start = i == 0 || keys[i - 1] == ' ';
-                    now += Duration::from_millis(if word_start { 900 } else { 300 });
+                    now += Duration::from_millis(if word_start { start_ms } else { 300 });
                     app.type_char(c, now);
                 }
             }
             assert!(
                 app.profile.unlocked >= start + 3,
-                "{lang}: {} -> {} keys",
+                "{lang}, word starts {start_ms}ms: {} -> {} keys",
                 start,
                 app.profile.unlocked
             );
