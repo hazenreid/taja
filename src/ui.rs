@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout as Split, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
 use crate::app::App;
 use crate::layout::COLS;
@@ -17,10 +17,10 @@ const BAR: usize = 8;
 const ENTRY_WIDTH: usize = 22;
 
 pub fn draw(f: &mut Frame, app: &App) {
-    // 연습 칸: 테두리 2 + 목표 줄 + (한글만) 조합 줄. 알림은 맨 아래 상태 줄에.
+    // 연습 칸: 테두리 2 + 위아래 여백 2 + 목표 줄 + (한글만) 조합 줄. 알림은 맨 아래 상태 줄에.
     let practice_height = match app.lang() {
-        Lang::En => 3,
-        Lang::Ko => 4,
+        Lang::En => 5,
+        Lang::Ko => 6,
     };
     // 화면 키보드: 모든 키를 열고 모두 통과한 적이 있으면 숨김 (그 자리는 진행 칸이 씀).
     let keyboard_height = if app.hide_keyboard() { 0 } else { 5 };
@@ -163,6 +163,7 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or_default();
     let block = Block::new()
         .borders(Borders::ALL)
+        .padding(Padding::vertical(1))
         .title(" Practice ")
         .title_bottom(Line::from(focus).right_aligned());
     f.render_widget(
@@ -425,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn practice_box_has_no_empty_lines_and_messages_go_to_the_status_line() {
+    fn practice_box_has_one_blank_line_above_and_below() {
         for (words, inner_rows) in [(WordList::english(), 1), (WordList::korean(), 2)] {
             let layout = Layout::qwerty();
             let profile = Profile::new(&layout, &make_plan(&layout, &words));
@@ -438,9 +439,12 @@ mod tests {
             app.message = Some("New key unlocked: 'x'".into());
             let lines = screen(&app, 80, 24);
             let top = lines.iter().position(|l| l.contains("Practice")).unwrap();
-            let bottom = top + inner_rows + 1;
-            // 바로 다음 줄이 목표 줄이고, 한글은 그 아래 조합 줄 하나, 그다음은 아래 테두리.
-            assert!(!lines[top + 1].trim_matches(['│', ' ']).is_empty(), "{lines:#?}");
+            let bottom = top + inner_rows + 3;
+            let blank = |l: &str| l.trim_matches(['│', ' ']).is_empty();
+            // 빈 줄 하나, 목표 줄(한글은 그 아래 조합 줄), 빈 줄 하나, 아래 테두리.
+            assert!(blank(&lines[top + 1]), "{lines:#?}");
+            assert!(!blank(&lines[top + 2]), "{lines:#?}");
+            assert!(blank(&lines[bottom - 1]), "{lines:#?}");
             assert!(lines[bottom].starts_with('└'), "{lines:#?}");
             // 아래 테두리에는 focus만, 알림은 맨 아래 상태 줄에.
             assert!(lines[bottom].contains("focus:"), "{}", lines[bottom]);
