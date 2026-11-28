@@ -11,16 +11,16 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use crate::app::App;
 use crate::layout::COLS;
 use crate::progress::WordStarts;
-use crate::words::{Lang, char_width};
+use crate::words::{Lang, char_width, display_width};
 
 const BAR: usize = 8;
 const ENTRY_WIDTH: usize = 22;
 
 pub fn draw(f: &mut Frame, app: &App) {
-    // 연습 칸: 테두리 2 + 빈 줄, 목표 줄, (한글만) 조합 줄, 알림 줄.
+    // 연습 칸: 테두리 2 + 목표 줄 + (한글만) 조합 줄. 알림은 아래 테두리에 띄움.
     let practice_height = match app.lang() {
-        Lang::En => 5,
-        Lang::Ko => 6,
+        Lang::En => 3,
+        Lang::Ko => 4,
     };
     // 화면 키보드: 모든 키를 열고 모두 통과한 적이 있으면 숨김 (그 자리는 진행 칸이 씀).
     let keyboard_height = if app.hide_keyboard() { 0 } else { 5 };
@@ -125,7 +125,7 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let mut text = vec![Line::raw(""), Line::from(target)];
+    let mut text = vec![Line::from(target)];
     // 한글: 친 키가 조합된 모습을 목표 줄 바로 아래에 같은 폭으로 보여줍니다 (영어는 이 줄이 없음).
     if app.lang() == Lang::Ko {
         text.push(Line::from(
@@ -141,21 +141,27 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    let message = match &app.message {
-        Some(m) => Line::styled(
-            m.clone(),
-            Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-        ),
-        None => Line::raw(""),
-    };
-    text.push(message);
     let focus = app
         .focus()
         .map(|c| format!(" focus: {} ", app.label(c)))
         .unwrap_or_default();
+    // 알림(새 키, 시작 키 등)은 아래 테두리 왼쪽에. 오른쪽의 focus와 겹치지 않게 자름.
+    let room = (area.width as usize).saturating_sub(display_width(&focus) + 4);
+    let message = app
+        .message
+        .as_deref()
+        .map(|m| fit_width(&format!(" {m} "), room))
+        .unwrap_or_default();
     let block = Block::new()
         .borders(Borders::ALL)
         .title(" Practice ")
+        .title_bottom(
+            Line::styled(
+                message,
+                Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            )
+            .left_aligned(),
+        )
         .title_bottom(Line::from(focus).right_aligned());
     f.render_widget(
         Paragraph::new(text).alignment(Alignment::Center).block(block),
@@ -414,6 +420,34 @@ mod tests {
         app.regenerate();
         let lines = screen(&app, 100, 30);
         assert!(lines.iter().any(|l| l.contains("Keyboard")), "{lines:#?}");
+    }
+
+    #[test]
+    fn practice_box_has_no_empty_lines() {
+        for (words, inner_rows) in [(WordList::english(), 1), (WordList::korean(), 2)] {
+            let layout = Layout::qwerty();
+            let profile = Profile::new(&layout, &make_plan(&layout, &words));
+            let targets = Targets {
+                wpm: 30.0,
+                accuracy: 0.90,
+            };
+            let path = std::env::temp_dir().join("taja-ui-test-never-saved.json");
+            let mut app = App::new(layout, words, profile, targets, path, None);
+            app.message = Some("New key unlocked: 'x'".into());
+            let lines = screen(&app, 80, 24);
+            let top = lines.iter().position(|l| l.contains("Practice")).unwrap();
+            let bottom = top + inner_rows + 1;
+            // 바로 다음 줄이 목표 줄이고, 한글은 그 아래 조합 줄 하나, 그다음은 아래 테두리.
+            assert!(!lines[top + 1].trim_matches(['│', ' ']).is_empty(), "{lines:#?}");
+            assert!(lines[bottom].starts_with('└'), "{lines:#?}");
+            // 알림은 아래 테두리 왼쪽, focus는 오른쪽.
+            assert!(
+                lines[bottom].contains("New key unlocked: 'x'"),
+                "{}",
+                lines[bottom]
+            );
+            assert!(lines[bottom].contains("focus:"), "{}", lines[bottom]);
+        }
     }
 
     #[test]
