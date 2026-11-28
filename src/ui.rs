@@ -17,9 +17,14 @@ const BAR: usize = 8;
 const ENTRY_WIDTH: usize = 22;
 
 pub fn draw(f: &mut Frame, app: &App) {
+    // 연습 칸: 테두리 2 + 빈 줄, 목표 줄, (한글만) 조합 줄, 알림 줄.
+    let practice_height = match app.lang() {
+        Lang::En => 5,
+        Lang::Ko => 6,
+    };
     let [header, practice, keyboard, progress, footer] = Split::vertical([
         Constraint::Length(1),
-        Constraint::Length(6),
+        Constraint::Length(practice_height),
         Constraint::Length(5),
         Constraint::Min(4),
         Constraint::Length(1),
@@ -96,10 +101,10 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    // 한글: 친 키가 조합된 모습을 목표 줄 바로 아래에 같은 폭으로 보여줍니다.
-    let typed = match app.lang() {
-        Lang::En => Line::raw(""),
-        Lang::Ko => Line::from(
+    let mut text = vec![Line::raw(""), Line::from(target)];
+    // 한글: 친 키가 조합된 모습을 목표 줄 바로 아래에 같은 폭으로 보여줍니다 (영어는 이 줄이 없음).
+    if app.lang() == Lang::Ko {
+        text.push(Line::from(
             app.target
                 .units
                 .iter()
@@ -109,8 +114,8 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
                     None => Span::raw(" ".repeat(char_width(u.ch))),
                 })
                 .collect::<Vec<_>>(),
-        ),
-    };
+        ));
+    }
 
     let message = match &app.message {
         Some(m) => Line::styled(
@@ -119,7 +124,7 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         ),
         None => Line::raw(""),
     };
-    let text = vec![Line::raw(""), Line::from(target), typed, message];
+    text.push(message);
     let focus = app
         .focus()
         .map(|c| format!(" focus: {} ", app.label(c)))
