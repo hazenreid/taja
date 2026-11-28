@@ -22,8 +22,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         Lang::En => 5,
         Lang::Ko => 6,
     };
-    // 화면 키보드: 모든 키를 열고 모두 통과했으면 숨김 (그 자리는 진행 칸이 씀).
-    let keyboard_height = if app.hide_keyboard { 0 } else { 5 };
+    // 화면 키보드: 모든 키를 열고 모두 통과한 적이 있으면 숨김 (그 자리는 진행 칸이 씀).
+    let keyboard_height = if app.hide_keyboard() { 0 } else { 5 };
     let [header, practice, keyboard, progress, footer] = Split::vertical([
         Constraint::Length(1),
         Constraint::Length(practice_height),
@@ -35,7 +35,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     draw_header(f, app, header);
     draw_practice(f, app, practice);
-    if !app.hide_keyboard {
+    if !app.hide_keyboard() {
         draw_keyboard(f, app, keyboard);
     }
     draw_progress(f, app, progress);
@@ -406,7 +406,7 @@ mod tests {
     fn keyboard_is_hidden_after_every_key_passes() {
         let mut app = app_with(26, 26);
         app.regenerate();
-        assert!(app.hide_keyboard);
+        assert!(app.hide_keyboard());
         let lines = screen(&app, 100, 30);
         assert!(!lines.iter().any(|l| l.contains("Keyboard")), "{lines:#?}");
         // 한 키라도 통과 못 했으면 보임.

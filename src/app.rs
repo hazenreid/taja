@@ -35,8 +35,6 @@ pub struct App {
     pub save_error: Option<String>,
     pub line_width: usize,
     pub quit: bool,
-    /// 화면 키보드를 숨길지. 모든 키를 열고 모든 키가 목표를 넘었으면 숨깁니다 (줄을 시작할 때 정함).
-    pub hide_keyboard: bool,
     rng: StdRng,
 }
 
@@ -62,7 +60,6 @@ impl App {
             save_error: None,
             line_width: MAX_LINE,
             quit: false,
-            hide_keyboard: false,
             rng: StdRng::from_os_rng(),
         };
         app.regenerate();
@@ -100,8 +97,16 @@ impl App {
     fn start(&mut self, target: Target) {
         self.lesson = Lesson::new(&target.keys.iter().collect::<String>());
         self.target = target;
-        // 줄 중간에 화면이 바뀌지 않게 줄을 시작할 때만 정합니다.
-        self.hide_keyboard = self.all_passed();
+        // 모든 키를 열고 모두 통과했으면 완료로 표시 (한 번 완료되면 계속). 줄 중간에 화면이
+        // 바뀌지 않게 줄을 시작할 때만 확인합니다.
+        if !self.profile.completed && self.all_passed() {
+            self.profile.completed = true;
+        }
+    }
+
+    /// 화면 키보드를 숨길지: 모든 키를 열고 모두 통과한 적이 있으면 계속 숨깁니다.
+    pub fn hide_keyboard(&self) -> bool {
+        self.profile.completed
     }
 
     /// 모든 키를 열었고, 모든 키가 목표 속도·정확도를 넘었는지.
@@ -378,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_hides_once_every_key_is_open_and_passed() {
+    fn keyboard_stays_hidden_once_every_key_is_open_and_passed() {
         let (mut app, dir) = app_for(WordList::english(), "hide-keyboard");
         let fast = crate::progress::Sample {
             ms: Some(200),
@@ -395,14 +400,14 @@ mod tests {
         // 열린 키가 모두 통과해도 아직 잠긴 키가 있으면 보임.
         pass_all(&mut app);
         app.regenerate();
-        assert!(!app.hide_keyboard);
+        assert!(!app.hide_keyboard());
         // 모든 키를 열고 모두 통과하면, 다음 줄부터 숨김.
         app.profile.unlocked = app.profile.order.len();
         pass_all(&mut app);
-        assert!(!app.hide_keyboard, "줄 중간에는 바뀌지 않음");
+        assert!(!app.hide_keyboard(), "줄 중간에는 바뀌지 않음");
         app.regenerate();
-        assert!(app.hide_keyboard);
-        // 어떤 키가 다시 목표 아래로 내려가면 다음 줄부터 다시 보임.
+        assert!(app.hide_keyboard());
+        // 그 뒤로 어떤 키가 다시 목표 아래로 내려가도 계속 숨김.
         let k = app.profile.order[0];
         for _ in 0..30 {
             app.profile.record(
@@ -415,7 +420,11 @@ mod tests {
             );
         }
         app.regenerate();
-        assert!(!app.hide_keyboard);
+        assert!(app.hide_keyboard());
+        // 진도 파일에 저장돼서 다시 실행해도 숨김.
+        app.save();
+        let loaded = crate::storage::load_profile(&app.save_path).unwrap().unwrap();
+        assert!(loaded.completed);
         let _ = std::fs::remove_dir_all(dir);
     }
 

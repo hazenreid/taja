@@ -198,6 +198,10 @@ pub struct Profile {
     /// 약한 연결: 바로 앞 키 → 이 키를 칠 때 틀린 기록. 공백은 단어 경계.
     #[serde(default)]
     pub weak_pairs: Vec<WeakPair>,
+    /// 모든 키를 열고 모든 키가 목표를 넘은 적이 있는지. 한 번 true가 되면 계속 유지되고,
+    /// 그때부터 화면 키보드를 숨깁니다 (`--reset`으로 새로 시작하면 다시 false).
+    #[serde(default)]
+    pub completed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -217,6 +221,7 @@ impl Profile {
             history: Vec::new(),
             missed: Vec::new(),
             weak_pairs: Vec::new(),
+            completed: false,
         }
     }
 
@@ -555,9 +560,13 @@ mod tests {
     #[test]
     fn old_profiles_without_missed_still_load() {
         let mut json: serde_json::Value = serde_json::to_value(profile()).unwrap();
-        json.as_object_mut().unwrap().remove("missed");
+        for field in ["missed", "weak_pairs", "completed"] {
+            json.as_object_mut().unwrap().remove(field);
+        }
         let p: Profile = serde_json::from_value(json).unwrap();
         assert!(p.missed.is_empty());
+        assert!(p.weak_pairs.is_empty());
+        assert!(!p.completed);
     }
 
     #[test]
