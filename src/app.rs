@@ -20,7 +20,7 @@ use crate::words::{Lang, WordList};
 pub const MIN_LINE: usize = 20;
 pub const MAX_LINE: usize = 56;
 
-/// 아래 테두리에 들어가도록 짧게 (taja가 한글을 직접 조합한다는 설명은 README에).
+/// 상태 줄에 들어가도록 짧게 (taja가 한글을 직접 조합한다는 설명은 README에).
 const IME_WARNING: &str = "Switch the OS input to English (Han/Yeong key)";
 
 pub struct App {

@@ -17,7 +17,7 @@ const BAR: usize = 8;
 const ENTRY_WIDTH: usize = 22;
 
 pub fn draw(f: &mut Frame, app: &App) {
-    // 연습 칸: 테두리 2 + 목표 줄 + (한글만) 조합 줄. 알림은 아래 테두리에 띄움.
+    // 연습 칸: 테두리 2 + 목표 줄 + (한글만) 조합 줄. 알림은 맨 아래 상태 줄에.
     let practice_height = match app.lang() {
         Lang::En => 3,
         Lang::Ko => 4,
@@ -40,14 +40,30 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     draw_progress(f, app, progress);
 
-    let mut help = vec![Span::styled(
-        " Esc quit · Tab new line",
-        Style::new().fg(Color::DarkGray),
-    )];
-    if let Some(err) = &app.save_error {
-        help.push(Span::styled(format!("   {err}"), Style::new().fg(Color::Red)));
+    draw_status(f, app, footer);
+}
+
+/// 맨 아래 상태 줄: 단축키, 알림(새 키, 시작 키 등), 저장 오류.
+fn draw_status(f: &mut Frame, app: &App, area: Rect) {
+    const HELP: &str = " Esc quit · Tab new line";
+    let error = app
+        .save_error
+        .as_deref()
+        .map(|e| format!("   {e}"))
+        .unwrap_or_default();
+    let mut spans = vec![Span::styled(HELP, Style::new().fg(Color::DarkGray))];
+    if let Some(m) = &app.message {
+        // 저장 오류가 있으면 그 자리는 남기고, 넘치는 알림은 `…`로 자름.
+        let room = (area.width as usize).saturating_sub(display_width(HELP) + display_width(&error));
+        spans.push(Span::styled(
+            fit_width(&format!("   {m}"), room),
+            Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ));
     }
-    f.render_widget(Paragraph::new(Line::from(help)), footer);
+    if !error.is_empty() {
+        spans.push(Span::styled(error, Style::new().fg(Color::Red)));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 /// 화면 폭(칸)에 맞게 자르고, 잘랐으면 끝에 `…`.
@@ -145,23 +161,9 @@ fn draw_practice(f: &mut Frame, app: &App, area: Rect) {
         .focus()
         .map(|c| format!(" focus: {} ", app.label(c)))
         .unwrap_or_default();
-    // 알림(새 키, 시작 키 등)은 아래 테두리 왼쪽에. 오른쪽의 focus와 겹치지 않게 자름.
-    let room = (area.width as usize).saturating_sub(display_width(&focus) + 4);
-    let message = app
-        .message
-        .as_deref()
-        .map(|m| fit_width(&format!(" {m} "), room))
-        .unwrap_or_default();
     let block = Block::new()
         .borders(Borders::ALL)
         .title(" Practice ")
-        .title_bottom(
-            Line::styled(
-                message,
-                Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-            )
-            .left_aligned(),
-        )
         .title_bottom(Line::from(focus).right_aligned());
     f.render_widget(
         Paragraph::new(text).alignment(Alignment::Center).block(block),
@@ -423,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn practice_box_has_no_empty_lines() {
+    fn practice_box_has_no_empty_lines_and_messages_go_to_the_status_line() {
         for (words, inner_rows) in [(WordList::english(), 1), (WordList::korean(), 2)] {
             let layout = Layout::qwerty();
             let profile = Profile::new(&layout, &make_plan(&layout, &words));
@@ -440,13 +442,12 @@ mod tests {
             // 바로 다음 줄이 목표 줄이고, 한글은 그 아래 조합 줄 하나, 그다음은 아래 테두리.
             assert!(!lines[top + 1].trim_matches(['│', ' ']).is_empty(), "{lines:#?}");
             assert!(lines[bottom].starts_with('└'), "{lines:#?}");
-            // 알림은 아래 테두리 왼쪽, focus는 오른쪽.
-            assert!(
-                lines[bottom].contains("New key unlocked: 'x'"),
-                "{}",
-                lines[bottom]
-            );
+            // 아래 테두리에는 focus만, 알림은 맨 아래 상태 줄에.
             assert!(lines[bottom].contains("focus:"), "{}", lines[bottom]);
+            assert!(!lines[bottom].contains("New key"), "{}", lines[bottom]);
+            let status = lines.last().unwrap();
+            assert!(status.contains("Esc quit"), "{status}");
+            assert!(status.contains("New key unlocked: 'x'"), "{status}");
         }
     }
 
